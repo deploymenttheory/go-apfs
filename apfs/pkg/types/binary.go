@@ -1078,7 +1078,7 @@ func DeserializeBTNodePhys(data []byte) (*BTNodePhys, error) {
 	if node.Level, err = br.ReadUint16(); err != nil {
 		return nil, err
 	}
-	if node.KeyCount, err = br.ReadUint32(); err != nil {
+	if node.NKeys, err = br.ReadUint32(); err != nil {
 		return nil, err
 	}
 	if err = br.Read(&node.TableSpace); err != nil {
@@ -1140,7 +1140,7 @@ func SerializeBTNodePhys(node *BTNodePhys) ([]byte, error) {
 	if err := bw.WriteUint16(node.Level); err != nil {
 		return nil, err
 	}
-	if err := bw.WriteUint32(node.KeyCount); err != nil {
+	if err := bw.WriteUint32(node.NKeys); err != nil {
 		return nil, err
 	}
 	if err := bw.Write(node.TableSpace); err != nil {

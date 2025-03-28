@@ -81,7 +81,7 @@ func TestReadBTreeNodePhys(t *testing.T) {
 }
 
 func TestValidateBTreeNodePhys(t *testing.T) {
-	node := &types.BTreeNodePhys{
+	node := &types.BTNodePhys{
 		Flags: 0x0002,
 		Level: 1,
 		NKeys: 1,
@@ -100,43 +100,38 @@ func TestValidateBTreeNodePhys(t *testing.T) {
 }
 
 func TestSearchBTreeNode(t *testing.T) {
-	nodeData := make([]byte, 50)
-
-	// First key: "hello" at offset 20, length 5
-	binary.LittleEndian.PutUint16(nodeData[0:2], 20)
-	binary.LittleEndian.PutUint16(nodeData[2:4], 5)
-
-	// Second key: "world" at offset 25, length 5
-	binary.LittleEndian.PutUint16(nodeData[4:6], 25)
-	binary.LittleEndian.PutUint16(nodeData[6:8], 5)
-
-	copy(nodeData[20:], "hello")
-	copy(nodeData[25:], "world")
-
-	node := &types.BTreeNodePhys{
-		NKeys: 2,
-		Data:  nodeData,
-		TableSpace: types.NLoc{
-			Off: 0,
-			Len: 20,
-		},
+	node := &types.BTNodePhys{
+		Flags:      0x02,
+		Level:      0,
+		Data:       make([]byte, 256),
+		TableSpace: types.NLoc{Off: 256, Len: 0},
 	}
+	InsertKeyValueLeaf(node, []byte("apple"), []byte("red"))
+	InsertKeyValueLeaf(node, []byte("hello"), []byte("world"))
+	InsertKeyValueLeaf(node, []byte("zebra"), []byte("stripes"))
 
-	keyCompare := bytes.Compare
+	for i := 0; i < int(node.NKeys); i++ {
+		k, err := GetKeyAtIndex(node, i)
+		if err != nil {
+			t.Logf("kvloc %d = [error: %v]", i, err)
+			continue
+		}
+		t.Logf("kvloc %d = %q", i, k)
+	}
 
 	tests := []struct {
 		key       string
 		wantIndex int
 		wantFound bool
 	}{
-		{"apple", 0, false},
-		{"hello", 0, true},
-		{"world", 1, true},
-		{"zebra", 2, false},
+		{"apple", 0, true},
+		{"hello", 1, true},
+		{"zebra", 2, true},
+		{"banana", 1, false},
 	}
 
 	for _, tc := range tests {
-		index, found, err := SearchBTreeNodePhys(node, []byte(tc.key), keyCompare)
+		index, found, err := SearchBTreeNodePhys(node, []byte(tc.key), bytes.Compare)
 		if err != nil {
 			t.Fatalf("SearchBTreeNode failed for key '%s': %v", tc.key, err)
 		}
@@ -148,14 +143,13 @@ func TestSearchBTreeNode(t *testing.T) {
 }
 
 func TestGetKeyAtIndex(t *testing.T) {
-	node := &types.BTreeNodePhys{
-		NKeys: 1,
-		Data:  []byte("\x04\x00\x05\x00testkey"),
-		TableSpace: types.NLoc{
-			Off: 0,
-			Len: 20,
-		},
+	node := &types.BTNodePhys{
+		Flags:      0x02,
+		Level:      0,
+		Data:       make([]byte, 0, 512),
+		TableSpace: types.NLoc{Off: 256, Len: 0},
 	}
+	InsertKeyValueLeaf(node, []byte("testk"), []byte("val"))
 
 	key, err := GetKeyAtIndex(node, 0)
 	if err != nil {
@@ -167,14 +161,13 @@ func TestGetKeyAtIndex(t *testing.T) {
 }
 
 func TestGetValueAtIndex(t *testing.T) {
-	node := &types.BTreeNodePhys{
-		NKeys: 1,
-		Data:  []byte("\x00\x00\x00\x00\x08\x00\x05\x00value"),
-		TableSpace: types.NLoc{
-			Off: 0,
-			Len: 20,
-		},
+	node := &types.BTNodePhys{
+		Flags:      0x02,
+		Level:      0,
+		Data:       make([]byte, 0, 512),
+		TableSpace: types.NLoc{Off: 256, Len: 0},
 	}
+	InsertKeyValueLeaf(node, []byte("k"), []byte("value"))
 
 	value, err := GetValueAtIndex(node, 0)
 	if err != nil {
@@ -182,5 +175,72 @@ func TestGetValueAtIndex(t *testing.T) {
 	}
 	if string(value) != "value" {
 		t.Errorf("expected 'value', got '%s'", value)
+	}
+}
+
+func TestInsertKeyValueLeafAndGetKeyValue(t *testing.T) {
+	node := &types.BTNodePhys{
+		Flags:      0x02, // leaf
+		Level:      0,
+		Data:       make([]byte, 0, 512),
+		TableSpace: types.NLoc{Off: 256, Len: 0},
+	}
+
+	key := []byte("foo")
+	val := []byte("bar")
+	err := InsertKeyValueLeaf(node, key, val)
+	if err != nil {
+		t.Fatalf("InsertKeyValueLeaf failed: %v", err)
+	}
+
+	if node.NKeys != 1 {
+		t.Errorf("expected NKeys = 1, got %d", node.NKeys)
+	}
+
+	readKey, err := GetKeyAtIndex(node, 0)
+	if err != nil {
+		t.Fatalf("GetKeyAtIndex failed: %v", err)
+	}
+	if !bytes.Equal(readKey, key) {
+		t.Errorf("expected key %q, got %q", key, readKey)
+	}
+
+	readVal, err := GetValueAtIndex(node, 0)
+	if err != nil {
+		t.Fatalf("GetValueAtIndex failed: %v", err)
+	}
+	if !bytes.Equal(readVal, val) {
+		t.Errorf("expected value %q, got %q", val, readVal)
+	}
+}
+
+func TestDeleteKeyValue(t *testing.T) {
+	node := &types.BTNodePhys{
+		Flags:      0x02,
+		Level:      0,
+		Data:       make([]byte, 0, 512),
+		TableSpace: types.NLoc{Off: 256, Len: 0},
+	}
+
+	InsertKeyValueLeaf(node, []byte("foo"), []byte("bar"))
+	InsertKeyValueLeaf(node, []byte("baz"), []byte("qux"))
+
+	if node.NKeys != 2 {
+		t.Fatalf("expected 2 keys, got %d", node.NKeys)
+	}
+
+	err := DeleteKeyValue(node, []byte("foo"), bytes.Compare)
+	if err != nil {
+		t.Fatalf("DeleteKeyValue failed: %v", err)
+	}
+
+	if node.NKeys != 1 {
+		t.Errorf("expected NKeys = 1 after deletion, got %d", node.NKeys)
+	}
+
+	// Should fail if key doesn't exist
+	err = DeleteKeyValue(node, []byte("nonexistent"), bytes.Compare)
+	if err == nil {
+		t.Error("expected error for deleting nonexistent key, got nil")
 	}
 }

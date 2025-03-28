@@ -286,15 +286,15 @@ type EvictMappingVal struct {
 
 // BTNodePhys represents a B-tree node (btree_node_phys_t)
 type BTNodePhys struct {
-	Header      ObjectHeader // Object header
-	Flags       uint16       // Flags
-	Level       uint16       // Level in tree (0=leaf)
-	KeyCount    uint32       // Number of keys
-	TableSpace  NLoc         // Table of contents location
-	FreeSpace   NLoc         // Free space location
-	KeyFreeList NLoc         // Free list for keys
-	ValFreeList NLoc         // Free list for values
-	Data        []byte       // Node data (variable length)
+	Header      ObjectHeader // Object header (obj_phys_t)
+	Flags       uint16       // Node flags
+	Level       uint16       // Node level (0 = leaf)
+	NKeys       uint32       // Number of keys in node
+	TableSpace  NLoc         // Offset to table of contents
+	FreeSpace   NLoc         // Offset to shared free space
+	KeyFreeList NLoc         // Offset to key free list
+	ValFreeList NLoc         // Offset to value free list
+	Data        []byte       // Node data (keys, values, table of contents, etc.)
 }
 
 // IsLeaf returns true if this is a leaf node
@@ -1265,24 +1265,6 @@ type XFBlob struct {
 	NumExts  uint16 // Number of extended fields
 	UsedData uint16 // Used data size
 	Data     []byte // Field data
-}
-
-// BTreeNodePhys represents a physical B-tree node structure (btree_node_phys_t)
-type BTreeNodePhys struct {
-	Header      ObjectHeader // Object header (obj_phys_t)
-	Flags       uint16       // Node flags
-	Level       uint16       // Node level (0 = leaf)
-	NKeys       uint32       // Number of keys in node
-	TableSpace  NLoc         // Offset to table of contents
-	FreeSpace   NLoc         // Offset to shared free space
-	KeyFreeList NLoc         // Offset to key free list
-	ValFreeList NLoc         // Offset to value free list
-	Data        []byte       // Node data (keys, values, table of contents, etc.)
-}
-
-// IsLeaf returns true if the B-tree node is a leaf node (level = 0)
-func (node *BTreeNodePhys) IsLeaf() bool {
-	return node.Level == 0
 }
 
 // ObjPhys represents the common header for container-layer objects.
