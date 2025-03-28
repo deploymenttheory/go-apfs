@@ -7,7 +7,7 @@ import (
 	"io"
 	"unsafe"
 
-	"github.com/deploymenttheory/go-apfs/pkg/checksum"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/checksum"
 )
 
 // BinaryReader helps with reading binary data
@@ -488,10 +488,10 @@ func DeserializeNXSuperblock(data []byte) (*NXSuperblock, error) {
 	copy(sb.EphemeralInfo[:], ephemeralInfo)
 
 	// Nested structs
-	if sb.BlockedOutRange.StartAddr, err = br.ReadPAddr(); err != nil {
+	if sb.BlockedOutPRange.StartAddr, err = br.ReadPAddr(); err != nil {
 		return nil, err
 	}
-	if sb.BlockedOutRange.BlockCount, err = br.ReadUint64(); err != nil {
+	if sb.BlockedOutPRange.BlockCount, err = br.ReadUint64(); err != nil {
 		return nil, err
 	}
 	if sb.EvictMappingTreeOID, err = br.ReadOID(); err != nil {
@@ -648,10 +648,10 @@ func SerializeNXSuperblock(sb *NXSuperblock) ([]byte, error) {
 	}
 
 	// Write nested structs
-	if err := writer.WritePAddr(sb.BlockedOutRange.StartAddr); err != nil {
+	if err := writer.WritePAddr(sb.BlockedOutPRange.StartAddr); err != nil {
 		return nil, err
 	}
-	if err := writer.WriteUint64(sb.BlockedOutRange.BlockCount); err != nil {
+	if err := writer.WriteUint64(sb.BlockedOutPRange.BlockCount); err != nil {
 		return nil, err
 	}
 	if err := writer.WriteOID(sb.EvictMappingTreeOID); err != nil {

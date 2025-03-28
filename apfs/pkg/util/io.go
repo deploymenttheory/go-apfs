@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/deploymenttheory/go-apfs/pkg/types"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/types"
 )
 
 // FileDevice implements BlockDevice backed by a file (e.g., .dmg or raw image)

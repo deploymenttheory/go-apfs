@@ -1,10 +1,11 @@
+// File: pkg/container/omap.go
 package container
 
 import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/deploymenttheory/go-apfs/pkg/types"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/types"
 )
 
 // OMapPhysSize defines the fixed size of an OMapPhys structure.
@@ -46,11 +47,9 @@ func ReadOMapPhys(device types.BlockDevice, addr types.PAddr) (*types.OMapPhys, 
 }
 
 // Validate performs basic validation on the OMapPhys structure.
-func (omap *types.OMapPhys) Validate() error {
+func ValidateOMapPhys(omap *types.OMapPhys) error {
 	if omap.TreeOID == types.OIDInvalid {
-		return fmt.Errorf("invalid TreeOID: cannot be zero")
+		return fmt.Errorf("invalid TreeOID: cannot be OIDInvalid (0)")
 	}
-
-	// Additional checks can be implemented here
 	return nil
 }

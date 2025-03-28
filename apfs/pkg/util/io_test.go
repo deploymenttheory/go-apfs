@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/pkg/types"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/types"
 )
 
 func TestFileDeviceReadWriteBlock(t *testing.T) {

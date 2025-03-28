@@ -38,7 +38,7 @@ type NXSuperblock struct {
 	MaxFileSystems         uint32       // Max number of volumes
 	FSOID                  [100]OID     // Volume OIDs
 	Counters               [32]uint64   // Array of counters
-	BlockedOutRange        PRange       // Blocked out range
+	BlockedOutPRange       PRange       // Blocked out p range
 	EvictMappingTreeOID    OID          // Evict mapping tree OID
 	Flags                  uint64       // Flags
 	EFIJumpstart           PAddr        // EFI jumpstart
@@ -1265,4 +1265,31 @@ type XFBlob struct {
 	NumExts  uint16 // Number of extended fields
 	UsedData uint16 // Used data size
 	Data     []byte // Field data
+}
+
+// BTreeNodePhys represents a physical B-tree node structure (btree_node_phys_t)
+type BTreeNodePhys struct {
+	Header      ObjectHeader // Object header (obj_phys_t)
+	Flags       uint16       // Node flags
+	Level       uint16       // Node level (0 = leaf)
+	NKeys       uint32       // Number of keys in node
+	TableSpace  NLoc         // Offset to table of contents
+	FreeSpace   NLoc         // Offset to shared free space
+	KeyFreeList NLoc         // Offset to key free list
+	ValFreeList NLoc         // Offset to value free list
+	Data        []byte       // Node data (keys, values, table of contents, etc.)
+}
+
+// IsLeaf returns true if the B-tree node is a leaf node (level = 0)
+func (node *BTreeNodePhys) IsLeaf() bool {
+	return node.Level == 0
+}
+
+// ObjPhys represents the common header for container-layer objects.
+type ObjPhys struct {
+	Cksum   [8]byte // Fletcher 64 checksum
+	OID     OID
+	XID     XID
+	Type    uint32
+	Subtype uint32
 }

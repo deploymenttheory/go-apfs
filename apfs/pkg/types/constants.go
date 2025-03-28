@@ -30,13 +30,15 @@ const (
 	SpacemanFreeQueueCount     = 3    // Number of spaceman free queues (internal, main, tier2)
 	MaxSnapshotMetadataRecords = 1024 // Max entries in the snapshot metadata tree
 	APFSMaxVolumeRoles         = 32   // Number of roles representable in a volume role bitmask
+	NXMinimumBlockSize         = 4096
+	NXMaximumBlockSize         = 65536
 )
 
 // Object identifier constants
 const (
-	OIDNXSuperblock  uint64 = 1
-	OIDInvalid       uint64 = 0
-	OIDReservedCount uint32 = 1024
+	OIDInvalid       OID = 0
+	OIDNXSuperblock  OID = 1
+	OIDReservedCount OID = 1024
 )
 
 // Object type masks
@@ -140,18 +142,22 @@ const (
 	NXCryptoSW  uint64 = 0x00000004
 
 	// Optional features (nx_features field of nx_superblock_t)
-	NXFeatureDefrag         uint64 = 0x0000000000000001
-	NXFeatureLCFD           uint64 = 0x0000000000000002
-	NXSupportedFeaturesMask uint64 = (NXFeatureDefrag | NXFeatureLCFD)
+	NXFeatureDefrag uint64 = 0x0000000000000001
+	NXFeatureLCFD   uint64 = 0x0000000000000002
+
+	NXSupportedFeaturesMask uint64 = NXFeatureDefrag | NXFeatureLCFD
+	UnsupportedFeaturesMask uint64 = ^NXSupportedFeaturesMask
 
 	// Read-only compatible features (nx_readonly_compatible_features field of nx_superblock_t)
 	NXSupportedROCompatMask uint64 = 0x0
 
 	// Incompatible features (nx_incompatible_features field of nx_superblock_t)
-	NXIncompatVersion1      uint64 = 0x0000000000000001
-	NXIncompatVersion2      uint64 = 0x0000000000000002
-	NXIncompatFusion        uint64 = 0x0000000000000100
-	NXSupportedIncompatMask uint64 = (NXIncompatVersion2 | NXIncompatFusion)
+	NXIncompatVersion1 uint64 = 0x0000000000000001
+	NXIncompatVersion2 uint64 = 0x0000000000000002
+	NXIncompatFusion   uint64 = 0x0000000000000100
+
+	NXSupportedIncompatMask         uint64 = NXIncompatVersion2 | NXIncompatFusion
+	UnsupportedIncompatFeaturesMask uint64 = ^NXSupportedIncompatMask
 )
 
 // Volume feature flags

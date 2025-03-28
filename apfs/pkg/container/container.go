@@ -1,11 +1,12 @@
+// File: pkg/container/container.go
 package container
 
 import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/deploymenttheory/go-apfs/pkg/checksum"
-	"github.com/deploymenttheory/go-apfs/pkg/types"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/checksum"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/types"
 )
 
 // NXSuperblockSize defines the exact size of NXSuperblock on-disk structure (fixed size portion)
@@ -28,7 +29,6 @@ func ReadNXSuperblock(device types.BlockDevice, addr types.PAddr) (*types.NXSupe
 		return nil, fmt.Errorf("data too short: expected %d bytes, got %d", NXSuperblockSize, len(data))
 	}
 
-	// Deserialize into NXSuperblock struct
 	var sb types.NXSuperblock
 	reader := binary.LittleEndian
 
@@ -66,41 +66,65 @@ func ReadNXSuperblock(device types.BlockDevice, addr types.PAddr) (*types.NXSupe
 	sb.TestType = reader.Uint32(data[176:180])
 	sb.MaxFileSystems = reader.Uint32(data[180:184])
 
-	// Deserialize volume OIDs
 	offset := 184
 	for i := 0; i < 100; i++ {
 		sb.FSOID[i] = types.OID(reader.Uint64(data[offset : offset+8]))
 		offset += 8
 	}
 
-	// Deserialize counters
 	for i := 0; i < 32; i++ {
 		sb.Counters[i] = reader.Uint64(data[offset : offset+8])
 		offset += 8
 	}
 
-	// Validate checksum
+	// Checksum validation
 	computedChecksum := checksum.Fletcher64WithZeroedChecksum(data, 0)
 	expectedChecksum := reader.Uint64(sb.Header.Cksum[:])
 	if computedChecksum != expectedChecksum {
-		return nil, fmt.Errorf("checksum validation failed: computed 0x%x, expected 0x%x", computedChecksum, expectedChecksum)
+		return nil, fmt.Errorf("checksum mismatch: computed 0x%x, expected 0x%x", computedChecksum, expectedChecksum)
 	}
 
 	// Minimal validation
-	if sb.Magic != types.NXMagic {
-		return nil, fmt.Errorf("invalid NXSuperblock magic number: got 0x%x, want 0x%x", sb.Magic, types.NXMagic)
+	if err := ValidateNXSuperblock(&sb); err != nil {
+		return nil, err
 	}
 
 	return &sb, nil
 }
 
-// Validate performs basic validation checks on the superblock structure.
-func (sb *types.NXSuperblock) Validate() error {
+// ValidateNXSuperblock performs thorough validation checks on the superblock structure.
+func ValidateNXSuperblock(sb *types.NXSuperblock) error {
+	if sb.Magic != types.NXMagic {
+		return fmt.Errorf("invalid NXSuperblock magic: 0x%x (expected 0x%x)", sb.Magic, types.NXMagic)
+	}
 	if sb.BlockSize < types.MinBlockSize || sb.BlockSize > types.MaxBlockSize {
-		return fmt.Errorf("unsupported block size: %d", sb.BlockSize)
+		return fmt.Errorf("unsupported block size: %d (must be between %d and %d)",
+			sb.BlockSize, types.MinBlockSize, types.MaxBlockSize)
 	}
 	if sb.BlockCount == 0 {
-		return fmt.Errorf("invalid block count: %d", sb.BlockCount)
+		return fmt.Errorf("block count must be non-zero")
+	}
+	if sb.MaxFileSystems == 0 || sb.MaxFileSystems > types.NXMaxFileSystems {
+		return fmt.Errorf("invalid max file systems: %d (maximum allowed is %d)", sb.MaxFileSystems, types.NXMaxFileSystems)
+	}
+	if sb.SpacemanOID == types.OIDInvalid {
+		return fmt.Errorf("invalid Spaceman OID (cannot be OIDInvalid)")
+	}
+	if sb.OMapOID == types.OIDInvalid {
+		return fmt.Errorf("invalid OMap OID (cannot be OIDInvalid)")
+	}
+	if sb.ReaperOID == types.OIDInvalid {
+		return fmt.Errorf("invalid Reaper OID (cannot be OIDInvalid)")
+	}
+	if sb.Features&types.UnsupportedFeaturesMask != 0 {
+		return fmt.Errorf("unsupported features detected: 0x%x", sb.Features&types.UnsupportedFeaturesMask)
+	}
+	if sb.IncompatFeatures&types.UnsupportedIncompatFeaturesMask != 0 {
+		return fmt.Errorf("unsupported incompatible features detected: 0x%x", sb.IncompatFeatures&types.UnsupportedIncompatFeaturesMask)
+	}
+	// Additional optional checks:
+	if sb.NextOID <= types.OIDReservedCount {
+		return fmt.Errorf("NextOID (%d) is within reserved range (must exceed %d)", sb.NextOID, types.OIDReservedCount)
 	}
 	return nil
 }
