@@ -101,22 +101,32 @@ func TestValidateBTreeNodePhys(t *testing.T) {
 
 func TestSearchBTreeNode(t *testing.T) {
 	node := &types.BTNodePhys{
-		Flags:      0x02,
+		Flags:      0x02, // Leaf node flag
 		Level:      0,
-		Data:       make([]byte, 256),
+		Data:       make([]byte, 0, 512),
 		TableSpace: types.NLoc{Off: 256, Len: 0},
 	}
-	InsertKeyValueLeaf(node, []byte("apple"), []byte("red"))
-	InsertKeyValueLeaf(node, []byte("hello"), []byte("world"))
-	InsertKeyValueLeaf(node, []byte("zebra"), []byte("stripes"))
 
+	// Insert keys in a specific order to test binary search
+	keys := []string{"apple", "hello", "zebra"}
+	values := []string{"red", "world", "stripes"}
+
+	for i, key := range keys {
+		err := InsertKeyValueLeaf(node, []byte(key), []byte(values[i]))
+		if err != nil {
+			t.Fatalf("Failed to insert key %s: %v", key, err)
+		}
+	}
+
+	// Debug: print out all keys to verify insertion
+	t.Log("Inserted keys:")
 	for i := 0; i < int(node.NKeys); i++ {
 		k, err := GetKeyAtIndex(node, i)
 		if err != nil {
-			t.Logf("kvloc %d = [error: %v]", i, err)
+			t.Logf("Error getting key at index %d: %v", i, err)
 			continue
 		}
-		t.Logf("kvloc %d = %q", i, k)
+		t.Logf("Key at index %d: %q", i, k)
 	}
 
 	tests := []struct {

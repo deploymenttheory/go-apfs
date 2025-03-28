@@ -89,16 +89,16 @@ func (o *ObjectHeader) GetObjectFlags() uint32 {
 	return o.Type & ObjectTypeFlagsMask
 }
 
-// NLoc represents a location within a B-tree node
+// NLoc represents a location within a B-tree node, matching the nloc_t structure in APFS
 type NLoc struct {
 	Off uint16 // Offset
 	Len uint16 // Length
 }
 
-// KVLoc represents the location of a key and value
+// KVLoc represents a key-value location, matching the kvloc_t structure in APFS
 type KVLoc struct {
-	Key NLoc // Key location
-	Val NLoc // Value location
+	K NLoc // Key location
+	V NLoc // Value location
 }
 
 // KVOff represents offsets for fixed-size keys and values

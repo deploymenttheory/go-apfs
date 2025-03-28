@@ -286,6 +286,13 @@ const (
 	BtoffInvalid           uint16 = 0xFFFF
 )
 
+// BTNodeFlags represent flag values for B-tree nodes
+const (
+	BTNodeRoot        uint16 = 0x0001
+	BTNodeLeaf        uint16 = 0x0002
+	BTNodeFixedKVSize uint16 = 0x0004
+)
+
 // Inode flags (internal_flags field of j_inode_val_t)
 const (
 	InodeIsAPFSPrivate         uint64 = 0x00000001
