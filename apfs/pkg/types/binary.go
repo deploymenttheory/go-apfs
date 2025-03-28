@@ -1164,6 +1164,676 @@ func SerializeBTNodePhys(node *BTNodePhys) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// DeserializeCheckpointMapPhys deserializes a checkpoint mapping block from binary data
+func DeserializeCheckpointMapPhys(data []byte) (*CheckpointMapPhys, error) {
+	if len(data) < int(unsafe.Sizeof(ObjectHeader{})) {
+		return nil, ErrStructTooShort
+	}
+
+	// Deserialize the object header first
+	header, err := DeserializeObjectHeader(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize object header: %w", err)
+	}
+
+	// Verify object type
+	if header.GetObjectType() != ObjectTypeCheckpointMap {
+		return nil, fmt.Errorf("invalid object type: 0x%x, expected CHECKPOINT_MAP", header.GetObjectType())
+	}
+
+	// Create checkpoint map structure
+	cpMap := &CheckpointMapPhys{
+		Header: *header,
+	}
+
+	// Read the rest of the checkpoint map
+	headerSize := int(unsafe.Sizeof(ObjectHeader{}))
+	br := NewBinaryReader(bytes.NewReader(data[headerSize:]), binary.LittleEndian)
+
+	// Read flags and count
+	var err1, err2 error
+	cpMap.Flags, err1 = br.ReadUint32()
+	cpMap.Count, err2 = br.ReadUint32()
+
+	if err1 != nil || err2 != nil {
+		return nil, fmt.Errorf("failed to read checkpoint map fields: %v %v", err1, err2)
+	}
+
+	// Read checkpoint mappings
+	cpMap.Map = make([]CheckpointMapping, cpMap.Count)
+	for i := uint32(0); i < cpMap.Count; i++ {
+		mapping := &cpMap.Map[i]
+
+		mapping.Type, err = br.ReadUint32()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping type: %w", err)
+		}
+
+		mapping.Subtype, err = br.ReadUint32()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping subtype: %w", err)
+		}
+
+		mapping.Size, err = br.ReadUint32()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping size: %w", err)
+		}
+
+		mapping.Pad, err = br.ReadUint32()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping pad: %w", err)
+		}
+
+		mapping.FSOID, err = br.ReadOID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping FSOID: %w", err)
+		}
+
+		mapping.OID, err = br.ReadOID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping OID: %w", err)
+		}
+
+		mapping.PAddr, err = br.ReadPAddr()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping PAddr: %w", err)
+		}
+	}
+
+	return cpMap, nil
+}
+
+// DeserializeOMapPhys deserializes an object map from binary data
+func DeserializeOMapPhys(data []byte) (*OMapPhys, error) {
+	if len(data) < int(unsafe.Sizeof(ObjectHeader{})) {
+		return nil, ErrStructTooShort
+	}
+
+	// Deserialize the object header first
+	header, err := DeserializeObjectHeader(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize object header: %w", err)
+	}
+
+	// Verify object type
+	if header.GetObjectType() != ObjectTypeOMap {
+		return nil, fmt.Errorf("invalid object type: 0x%x, expected OMAP", header.GetObjectType())
+	}
+
+	// Create object map structure
+	omap := &OMapPhys{
+		Header: *header,
+	}
+
+	// Read the rest of the object map
+	headerSize := int(unsafe.Sizeof(ObjectHeader{}))
+	br := NewBinaryReader(bytes.NewReader(data[headerSize:]), binary.LittleEndian)
+
+	// Read fields
+	if omap.Flags, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read flags: %w", err)
+	}
+
+	if omap.SnapCount, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read snap count: %w", err)
+	}
+
+	if omap.TreeType, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read tree type: %w", err)
+	}
+
+	if omap.SnapshotTreeType, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read snapshot tree type: %w", err)
+	}
+
+	if omap.TreeOID, err = br.ReadOID(); err != nil {
+		return nil, fmt.Errorf("failed to read tree OID: %w", err)
+	}
+
+	if omap.SnapshotTreeOID, err = br.ReadOID(); err != nil {
+		return nil, fmt.Errorf("failed to read snapshot tree OID: %w", err)
+	}
+
+	if omap.MostRecentSnap, err = br.ReadXID(); err != nil {
+		return nil, fmt.Errorf("failed to read most recent snap: %w", err)
+	}
+
+	if omap.PendingRevertMin, err = br.ReadXID(); err != nil {
+		return nil, fmt.Errorf("failed to read pending revert min: %w", err)
+	}
+
+	if omap.PendingRevertMax, err = br.ReadXID(); err != nil {
+		return nil, fmt.Errorf("failed to read pending revert max: %w", err)
+	}
+
+	return omap, nil
+}
+
+// DeserializeSpacemanPhys deserializes a space manager from binary data
+func DeserializeSpacemanPhys(data []byte) (*SpacemanPhys, error) {
+	if len(data) < int(unsafe.Sizeof(ObjectHeader{})) {
+		return nil, ErrStructTooShort
+	}
+
+	// Deserialize the object header first
+	header, err := DeserializeObjectHeader(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize object header: %w", err)
+	}
+
+	// Verify object type
+	if header.GetObjectType() != ObjectTypeSpaceman {
+		return nil, fmt.Errorf("invalid object type: 0x%x, expected SPACEMAN", header.GetObjectType())
+	}
+
+	// Create space manager structure
+	sm := &SpacemanPhys{
+		Header: *header,
+	}
+
+	// Read the rest of the space manager
+	headerSize := int(unsafe.Sizeof(ObjectHeader{}))
+	br := NewBinaryReader(bytes.NewReader(data[headerSize:]), binary.LittleEndian)
+
+	// Read basic fields
+	if sm.BlockSize, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read block size: %w", err)
+	}
+
+	if sm.BlocksPerChunk, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read blocks per chunk: %w", err)
+	}
+
+	if sm.ChunksPerCIB, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read chunks per CIB: %w", err)
+	}
+
+	if sm.CIBsPerCAB, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read CIBs per CAB: %w", err)
+	}
+
+	// Read device information for main device (index 0)
+	if sm.Devices[0].BlockCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read main device block count: %w", err)
+	}
+
+	if sm.Devices[0].ChunkCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read main device chunk count: %w", err)
+	}
+
+	if sm.Devices[0].CIBCount, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read main device CIB count: %w", err)
+	}
+
+	if sm.Devices[0].CABCount, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read main device CAB count: %w", err)
+	}
+
+	if sm.Devices[0].FreeCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read main device free count: %w", err)
+	}
+
+	if sm.Devices[0].AddrOffset, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read main device addr offset: %w", err)
+	}
+
+	if sm.Devices[0].Reserved, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read main device reserved: %w", err)
+	}
+
+	if sm.Devices[0].Reserved2, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read main device reserved2: %w", err)
+	}
+
+	// Read device information for tier2 device (index 1)
+	if sm.Devices[1].BlockCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device block count: %w", err)
+	}
+
+	if sm.Devices[1].ChunkCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device chunk count: %w", err)
+	}
+
+	if sm.Devices[1].CIBCount, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device CIB count: %w", err)
+	}
+
+	if sm.Devices[1].CABCount, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device CAB count: %w", err)
+	}
+
+	if sm.Devices[1].FreeCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device free count: %w", err)
+	}
+
+	if sm.Devices[1].AddrOffset, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device addr offset: %w", err)
+	}
+
+	if sm.Devices[1].Reserved, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device reserved: %w", err)
+	}
+
+	if sm.Devices[1].Reserved2, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read tier2 device reserved2: %w", err)
+	}
+
+	// Read other fields
+	if sm.Flags, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read flags: %w", err)
+	}
+
+	if sm.IPBmTxMultiplier, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM TX multiplier: %w", err)
+	}
+
+	if sm.IPBlockCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read IP block count: %w", err)
+	}
+
+	if sm.IPBmSizeInBlocks, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM size in blocks: %w", err)
+	}
+
+	if sm.IPBmBlockCount, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM block count: %w", err)
+	}
+
+	if sm.IPBmBase, err = br.ReadPAddr(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM base: %w", err)
+	}
+
+	if sm.IPBase, err = br.ReadPAddr(); err != nil {
+		return nil, fmt.Errorf("failed to read IP base: %w", err)
+	}
+
+	if sm.FSReserveBlockCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read FS reserve block count: %w", err)
+	}
+
+	if sm.FSReserveAllocCount, err = br.ReadUint64(); err != nil {
+		return nil, fmt.Errorf("failed to read FS reserve alloc count: %w", err)
+	}
+
+	// Read free queues
+	for i := 0; i < 3; i++ { // SFQ_COUNT = 3 (IP, Main, Tier2)
+		if sm.FreeQueues[i].Count, err = br.ReadUint64(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d count: %w", i, err)
+		}
+
+		if sm.FreeQueues[i].TreeOID, err = br.ReadOID(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d tree OID: %w", i, err)
+		}
+
+		if sm.FreeQueues[i].OldestXID, err = br.ReadXID(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d oldest XID: %w", i, err)
+		}
+
+		if sm.FreeQueues[i].TreeNodeLimit, err = br.ReadUint16(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d tree node limit: %w", i, err)
+		}
+
+		if sm.FreeQueues[i].Pad16, err = br.ReadUint16(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d pad16: %w", i, err)
+		}
+
+		if sm.FreeQueues[i].Pad32, err = br.ReadUint32(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d pad32: %w", i, err)
+		}
+
+		if sm.FreeQueues[i].Reserved, err = br.ReadUint64(); err != nil {
+			return nil, fmt.Errorf("failed to read free queue %d reserved: %w", i, err)
+		}
+	}
+
+	// Read remaining fields
+	if sm.IPBmFreeHead, err = br.ReadUint16(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM free head: %w", err)
+	}
+
+	if sm.IPBmFreeTail, err = br.ReadUint16(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM free tail: %w", err)
+	}
+
+	if sm.IPBmXidOffset, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM XID offset: %w", err)
+	}
+
+	if sm.IPBitmapOffset, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read IP bitmap offset: %w", err)
+	}
+
+	if sm.IPBmFreeNextOffset, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read IP BM free next offset: %w", err)
+	}
+
+	if sm.Version, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read version: %w", err)
+	}
+
+	if sm.StructSize, err = br.ReadUint32(); err != nil {
+		return nil, fmt.Errorf("failed to read struct size: %w", err)
+	}
+
+	// Note: We're skipping datazone_info_phys_t which is a complex structure
+	// A complete implementation would need to handle this
+
+	return sm, nil
+}
+
+// SerializeCheckpointMapPhys serializes a checkpoint mapping block to binary data
+func SerializeCheckpointMapPhys(cpMap *CheckpointMapPhys) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	writer := NewBinaryWriter(buf, binary.LittleEndian)
+
+	// Write object header
+	headerBytes, err := SerializeObjectHeader(&cpMap.Header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize object header: %w", err)
+	}
+	if err := writer.WriteBytes(headerBytes); err != nil {
+		return nil, fmt.Errorf("failed to write object header: %w", err)
+	}
+
+	// Write flags and count
+	if err := writer.WriteUint32(cpMap.Flags); err != nil {
+		return nil, fmt.Errorf("failed to write flags: %w", err)
+	}
+
+	if err := writer.WriteUint32(cpMap.Count); err != nil {
+		return nil, fmt.Errorf("failed to write count: %w", err)
+	}
+
+	// Write checkpoint mappings
+	for i := uint32(0); i < cpMap.Count; i++ {
+		mapping := &cpMap.Map[i]
+
+		if err := writer.WriteUint32(mapping.Type); err != nil {
+			return nil, fmt.Errorf("failed to write mapping type: %w", err)
+		}
+
+		if err := writer.WriteUint32(mapping.Subtype); err != nil {
+			return nil, fmt.Errorf("failed to write mapping subtype: %w", err)
+		}
+
+		if err := writer.WriteUint32(mapping.Size); err != nil {
+			return nil, fmt.Errorf("failed to write mapping size: %w", err)
+		}
+
+		if err := writer.WriteUint32(mapping.Pad); err != nil {
+			return nil, fmt.Errorf("failed to write mapping pad: %w", err)
+		}
+
+		if err := writer.WriteOID(mapping.FSOID); err != nil {
+			return nil, fmt.Errorf("failed to write mapping FSOID: %w", err)
+		}
+
+		if err := writer.WriteOID(mapping.OID); err != nil {
+			return nil, fmt.Errorf("failed to write mapping OID: %w", err)
+		}
+
+		if err := writer.WritePAddr(mapping.PAddr); err != nil {
+			return nil, fmt.Errorf("failed to write mapping PAddr: %w", err)
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// SerializeOMapPhys serializes an object map to binary data
+func SerializeOMapPhys(omap *OMapPhys) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	writer := NewBinaryWriter(buf, binary.LittleEndian)
+
+	// Write object header
+	headerBytes, err := SerializeObjectHeader(&omap.Header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize object header: %w", err)
+	}
+	if err := writer.WriteBytes(headerBytes); err != nil {
+		return nil, fmt.Errorf("failed to write object header: %w", err)
+	}
+
+	// Write fields
+	if err := writer.WriteUint32(omap.Flags); err != nil {
+		return nil, fmt.Errorf("failed to write flags: %w", err)
+	}
+
+	if err := writer.WriteUint32(omap.SnapCount); err != nil {
+		return nil, fmt.Errorf("failed to write snap count: %w", err)
+	}
+
+	if err := writer.WriteUint32(omap.TreeType); err != nil {
+		return nil, fmt.Errorf("failed to write tree type: %w", err)
+	}
+
+	if err := writer.WriteUint32(omap.SnapshotTreeType); err != nil {
+		return nil, fmt.Errorf("failed to write snapshot tree type: %w", err)
+	}
+
+	if err := writer.WriteOID(omap.TreeOID); err != nil {
+		return nil, fmt.Errorf("failed to write tree OID: %w", err)
+	}
+
+	if err := writer.WriteOID(omap.SnapshotTreeOID); err != nil {
+		return nil, fmt.Errorf("failed to write snapshot tree OID: %w", err)
+	}
+
+	if err := writer.WriteXID(omap.MostRecentSnap); err != nil {
+		return nil, fmt.Errorf("failed to write most recent snap: %w", err)
+	}
+
+	if err := writer.WriteXID(omap.PendingRevertMin); err != nil {
+		return nil, fmt.Errorf("failed to write pending revert min: %w", err)
+	}
+
+	if err := writer.WriteXID(omap.PendingRevertMax); err != nil {
+		return nil, fmt.Errorf("failed to write pending revert max: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// SerializeSpacemanPhys serializes a space manager to binary data
+func SerializeSpacemanPhys(sm *SpacemanPhys) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	writer := NewBinaryWriter(buf, binary.LittleEndian)
+
+	// Write object header
+	headerBytes, err := SerializeObjectHeader(&sm.Header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize object header: %w", err)
+	}
+	if err := writer.WriteBytes(headerBytes); err != nil {
+		return nil, fmt.Errorf("failed to write object header: %w", err)
+	}
+
+	// Write basic fields
+	if err := writer.WriteUint32(sm.BlockSize); err != nil {
+		return nil, fmt.Errorf("failed to write block size: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.BlocksPerChunk); err != nil {
+		return nil, fmt.Errorf("failed to write blocks per chunk: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.ChunksPerCIB); err != nil {
+		return nil, fmt.Errorf("failed to write chunks per CIB: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.CIBsPerCAB); err != nil {
+		return nil, fmt.Errorf("failed to write CIBs per CAB: %w", err)
+	}
+
+	// Write device information for main device (index 0)
+	if err := writer.WriteUint64(sm.Devices[0].BlockCount); err != nil {
+		return nil, fmt.Errorf("failed to write main device block count: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.Devices[0].ChunkCount); err != nil {
+		return nil, fmt.Errorf("failed to write main device chunk count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[0].CIBCount); err != nil {
+		return nil, fmt.Errorf("failed to write main device CIB count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[0].CABCount); err != nil {
+		return nil, fmt.Errorf("failed to write main device CAB count: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.Devices[0].FreeCount); err != nil {
+		return nil, fmt.Errorf("failed to write main device free count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[0].AddrOffset); err != nil {
+		return nil, fmt.Errorf("failed to write main device addr offset: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[0].Reserved); err != nil {
+		return nil, fmt.Errorf("failed to write main device reserved: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.Devices[0].Reserved2); err != nil {
+		return nil, fmt.Errorf("failed to write main device reserved2: %w", err)
+	}
+
+	// Write device information for tier2 device (index 1)
+	if err := writer.WriteUint64(sm.Devices[1].BlockCount); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device block count: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.Devices[1].ChunkCount); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device chunk count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[1].CIBCount); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device CIB count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[1].CABCount); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device CAB count: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.Devices[1].FreeCount); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device free count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[1].AddrOffset); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device addr offset: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Devices[1].Reserved); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device reserved: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.Devices[1].Reserved2); err != nil {
+		return nil, fmt.Errorf("failed to write tier2 device reserved2: %w", err)
+	}
+
+	// Write other fields
+	if err := writer.WriteUint32(sm.Flags); err != nil {
+		return nil, fmt.Errorf("failed to write flags: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.IPBmTxMultiplier); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM TX multiplier: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.IPBlockCount); err != nil {
+		return nil, fmt.Errorf("failed to write IP block count: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.IPBmSizeInBlocks); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM size in blocks: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.IPBmBlockCount); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM block count: %w", err)
+	}
+
+	if err := writer.WritePAddr(sm.IPBmBase); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM base: %w", err)
+	}
+
+	if err := writer.WritePAddr(sm.IPBase); err != nil {
+		return nil, fmt.Errorf("failed to write IP base: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.FSReserveBlockCount); err != nil {
+		return nil, fmt.Errorf("failed to write FS reserve block count: %w", err)
+	}
+
+	if err := writer.WriteUint64(sm.FSReserveAllocCount); err != nil {
+		return nil, fmt.Errorf("failed to write FS reserve alloc count: %w", err)
+	}
+
+	// Write free queues
+	for i := 0; i < 3; i++ { // SFQ_COUNT = 3 (IP, Main, Tier2)
+		if err := writer.WriteUint64(sm.FreeQueues[i].Count); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d count: %w", i, err)
+		}
+
+		if err := writer.WriteOID(sm.FreeQueues[i].TreeOID); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d tree OID: %w", i, err)
+		}
+
+		if err := writer.WriteXID(sm.FreeQueues[i].OldestXID); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d oldest XID: %w", i, err)
+		}
+
+		if err := writer.WriteUint16(sm.FreeQueues[i].TreeNodeLimit); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d tree node limit: %w", i, err)
+		}
+
+		if err := writer.WriteUint16(sm.FreeQueues[i].Pad16); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d pad16: %w", i, err)
+		}
+
+		if err := writer.WriteUint32(sm.FreeQueues[i].Pad32); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d pad32: %w", i, err)
+		}
+
+		if err := writer.WriteUint64(sm.FreeQueues[i].Reserved); err != nil {
+			return nil, fmt.Errorf("failed to write free queue %d reserved: %w", i, err)
+		}
+	}
+
+	// Write remaining fields
+	if err := writer.WriteUint16(sm.IPBmFreeHead); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM free head: %w", err)
+	}
+
+	if err := writer.WriteUint16(sm.IPBmFreeTail); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM free tail: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.IPBmXidOffset); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM XID offset: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.IPBitmapOffset); err != nil {
+		return nil, fmt.Errorf("failed to write IP bitmap offset: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.IPBmFreeNextOffset); err != nil {
+		return nil, fmt.Errorf("failed to write IP BM free next offset: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.Version); err != nil {
+		return nil, fmt.Errorf("failed to write version: %w", err)
+	}
+
+	if err := writer.WriteUint32(sm.StructSize); err != nil {
+		return nil, fmt.Errorf("failed to write struct size: %w", err)
+	}
+
+	// Note: We're skipping datazone_info_phys_t which is a complex structure
+	// A complete implementation would need to handle this
+
+	return buf.Bytes(), nil
+}
+
 // We implement serialization/deserialization for all APFS structures.
 // Each follows this standardized pattern:
 //
