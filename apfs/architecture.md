@@ -4,7 +4,7 @@
 
 This architecture follows the layered design of Apple File System as described in the reference documentation, with a clear separation between the container layer and file-system layer.
 
-### Refined Architecture
+### File Architecture
 
 ```
 apfs/
@@ -61,83 +61,256 @@ apfs/
         └── hash.go          # Hash algorithm implementations
 ```
 
-### key decisions
+# APFS Implementation Architecture with Functions
 
-1. **Layer-Specific Type Files**: Split types into `container_types.go` and `fs_types.go` to better reflect the layered architecture described in the spec.
+## pkg/types/
+- **constants.go**
+  - APFS Magic Numbers (NX_MAGIC, APFS_MAGIC, etc.)
+  - Object Types and Flags
+  - B-tree Constants
+  - File System Constants
+  - Error Constants
 
-2. **B-Tree Structure**: Added `btnode.go` to handle the complex B-tree node structure described in pages 122-133 of the spec, separate from the higher-level operations.
+- **container_types.go**
+  - `type NXSuperblock struct`
+  - `type OMapPhys struct`
+  - `type BTNodePhys struct`
+  - `type CheckpointMapPhys struct`
+  - `type SpacemanPhys struct`
+  - `type ReaperPhys struct`
 
-3. **Sealed Volumes**: Added a `seal` package to handle the sealed volumes functionality described on pages 150-158 of the spec.
+- **fs_types.go**
+  - `type APFSSuperblock struct`
+  - `type JInodeVal struct`
+  - `type JDrecVal struct`
+  - `type JFileExtentVal struct`
+  - `type JXattrVal struct`
+  - `type JSnapMetadataVal struct`
 
-4. **I/O Package**: Separated I/O operations (including transaction handling) into their own package, which better reflects the different roles described in the spec.
+- **interfaces.go**
+  - `type BlockDevice interface`
+  - `type Object interface`
+  - `type FileSystem interface`
+  - `type Transaction interface`
+  - `type ObjectResolver interface`
+  - `type KeyProvider interface`
 
-5. **Allocation Operations**: Added dedicated `allocation.go` for the space allocation functions, which are complex enough to warrant their own file based on pages 159-163.
+- **common.go**
+  - `type OID uint64`
+  - `type XID uint64`
+  - `type PAddr int64`
+  - `type UUID [16]byte`
+  - `type FileInfo struct`
+  - `type DirectoryEntry struct`
 
-6. **Crypto Package Structure**: Reorganized the crypto package to better match the structures and operations described in pages 135-149 of the spec.
+## pkg/container/
+- **object.go**
+  - `func ReadObject(device BlockDevice, addr PAddr) (*Object, error)`
+  - `func ValidateObjectChecksum(obj *Object) bool`
+  - `func WriteObject(device BlockDevice, obj *Object) error`
+  - `func ObjectTypeToString(objType uint32) string`
 
-### Implementation Considerations
+- **superblock.go**
+  - `func ReadNXSuperblock(device BlockDevice, addr PAddr) (*NXSuperblock, error)`
+  - `func ValidateNXSuperblock(sb *NXSuperblock) error`
+  - `func FindLatestSuperblock(device BlockDevice) (*NXSuperblock, PAddr, error)`
+  - `func WriteSuperblock(device BlockDevice, sb *NXSuperblock) error`
 
-1. **Object Storage Methods**: The spec (p.10) describes three storage methods for objects: ephemeral, physical, and virtual. Your `object.go` should handle these distinctions explicitly.
+- **checkpoint.go**
+  - `func ReadCheckpointMap(device BlockDevice, addr PAddr) (*CheckpointMapPhys, error)`
+  - `func FindLatestCheckpoint(device BlockDevice, sb *NXSuperblock) (*CheckpointMapPhys, error)`
+  - `func ReadCheckpointArea(device BlockDevice, sb *NXSuperblock) ([]CheckpointMapPhys, error)`
+  - `func WriteCheckpoint(device BlockDevice, sb *NXSuperblock, objects []EphemeralObject) error`
 
-2. **Checkpoints**: The checkpoint mechanism (p.26-27) is central to crash protection, so `checkpoint.go` should implement both reading and writing of checkpoints.
+- **omap.go**
+  - `func ReadOMap(device BlockDevice, addr PAddr) (*OMapPhys, error)`
+  - `func LookupOMapRecord(device BlockDevice, omap *OMapPhys, oid OID, xid XID) (*OMapVal, error)`
+  - `func InsertOMapRecord(device BlockDevice, omap *OMapPhys, oid OID, xid XID, paddr PAddr) error`
+  - `func DeleteOMapRecord(device BlockDevice, omap *OMapPhys, oid OID, xid XID) error`
 
-3. **Copy-on-Write**: Throughout the spec, it emphasizes that "objects on disk are never modified in place" (p.7). Ensure your implementation maintains this principle, especially in the transaction and B-tree code.
+- **btree.go**
+  - `func SearchBTree(device BlockDevice, rootNodeAddr PAddr, key []byte, compare KeyCompareFunc) ([]byte, error)`
+  - `func InsertBTree(device BlockDevice, rootNodeAddr *PAddr, key, value []byte, compare KeyCompareFunc) error`
+  - `func DeleteBTree(device BlockDevice, rootNodeAddr PAddr, key []byte, compare KeyCompareFunc) error`
+  - `func IterateBTree(device BlockDevice, rootNodeAddr PAddr, callback IterateCallback) error`
 
-4. **Object Map Design**: The spec (p.44-49) details how object maps use B-trees to map from virtual object identifiers to physical addresses. Your `omap.go` should implement this lookup mechanism carefully.
+- **btnode.go**
+  - `func ReadBTreeNode(device BlockDevice, addr PAddr) (*BTNodePhys, error)`
+  - `func WriteBTreeNode(device BlockDevice, node *BTNodePhys, addr PAddr) error`
+  - `func GetKeyValue(node *BTNodePhys, index int) ([]byte, []byte, error)`
+  - `func InsertKeyValue(node *BTNodePhys, key, value []byte) error`
+  - `func DeleteKeyValue(node *BTNodePhys, index int) error`
+  - `func SplitNode(node *BTNodePhys) (*BTNodePhys, *BTNodePhys, []byte, error)`
 
-5. **B-Tree Complex Layout**: The B-tree implementation (p.122-133) has unique characteristics including separate storage areas for keys and values growing from opposite ends. Ensure `btnode.go` captures these details.
+- **spaceman.go**
+  - `func ReadSpaceManager(device BlockDevice, addr PAddr) (*SpacemanPhys, error)`
+  - `func GetFreeSpace(device BlockDevice, spaceman *SpacemanPhys) (uint64, error)`
+  - `func UpdateSpaceManagerStats(device BlockDevice, spaceman *SpacemanPhys) error`
+  - `func InitializeSpaceManager(device BlockDevice, blockCount uint64) (*SpacemanPhys, error)`
 
-This refined architecture closely follows the Apple File System specification while maintaining a clean, logical structure that will be maintainable and extensible as you implement more advanced features.
+- **allocation.go**
+  - `func AllocateBlocks(device BlockDevice, spaceman *SpacemanPhys, count uint64) (PAddr, error)`
+  - `func FreeBlocks(device BlockDevice, spaceman *SpacemanPhys, start PAddr, count uint64) error`
+  - `func AllocateObject(device BlockDevice, spaceman *SpacemanPhys, size uint32) (PAddr, error)`
+  - `func MarkBlocksReserved(device BlockDevice, spaceman *SpacemanPhys, start PAddr, count uint64) error`
 
-Looking at the APFS reference document and your Go project architecture, I'd recommend implementing the system in the following logical order:
+- **reaper.go**
+  - `func ReadReaper(device BlockDevice, addr PAddr) (*ReaperPhys, error)`
+  - `func AddToReaperQueue(device BlockDevice, reaper *ReaperPhys, oid OID, fsoid OID) error`
+  - `func ProcessReaperQueue(device BlockDevice, reaper *ReaperPhys, maxItems int) error`
+  - `func IsReapInProgress(reaper *ReaperPhys) bool`
 
-1. **Core Types and Constants** (types/constants.go, types/types.go)
-   - Define fundamental types like OID, XID, PAddr, etc.
-   - Set up essential constants and error types
-   - Implement basic interfaces (BlockDevice, Object, etc.)
+- **encryption.go**
+  - `func ReadContainerKeybag(device BlockDevice, sb *NXSuperblock) (*KBLocker, error)`
+  - `func UnwrapContainerKeybag(keybag *KBLocker, uuid UUID) error`
+  - `func GetVolumeKey(containerKeybag *KBLocker, volUUID UUID) ([]byte, error)`
+  - `func UpdateContainerKeybag(device BlockDevice, sb *NXSuperblock, keybag *KBLocker) error`
 
-2. **IO and Utilities** (util/io.go, util/checksum.go)
-   - Implement the block device interface for reading/writing blocks
-   - Build Fletcher64 checksum implementation
-   - Add UUID handling utilities
+## pkg/fs/
+- **volume.go**
+  - `func ReadVolumeSuperblock(device BlockDevice, addr PAddr) (*APFSSuperblock, error)`
+  - `func ValidateVolumeSuperblock(sb *APFSSuperblock) error`
+  - `func GetVolumeInfo(sb *APFSSuperblock) (*VolumeInfo, error)`
+  - `func UpdateVolumeSuperblock(device BlockDevice, sb *APFSSuperblock) error`
 
-3. **Container Layer Core**
-   - Object handling (container/object.go)
-   - Container superblock parsing (container/container.go)
-   - Checkpoint mechanism (container/checkpoint.go)
+- **tree.go**
+  - `func ReadFSTree(device BlockDevice, omap *OMapPhys, oid OID) (*BTNodePhys, error)`
+  - `func SearchFSTree(device BlockDevice, omap *OMapPhys, rootOID OID, key []byte) ([]byte, error)`
+  - `func InsertFSRecord(device BlockDevice, omap *OMapPhys, rootOID OID, key, value []byte) error`
+  - `func DeleteFSRecord(device BlockDevice, omap *OMapPhys, rootOID OID, key []byte) error`
 
-4. **Basic Reading Infrastructure**
-   - Object map implementation (container/omap.go)
-   - B-tree structures (container/btree.go)
-   - Space manager basics (container/spaceman.go)
+- **inode.go**
+  - `func ReadInode(device BlockDevice, fs *FileSystem, inodeNum OID) (*JInodeVal, error)`
+  - `func CreateInode(fs *FileSystem, parentID OID, name string, mode uint16) (OID, error)`
+  - `func UpdateInode(fs *FileSystem, inodeNum OID, inode *JInodeVal) error`
+  - `func DeleteInode(fs *FileSystem, inodeNum OID) error`
+  - `func GetInodeExtendedField(inode *JInodeVal, fieldType uint8) ([]byte, error)`
 
-5. **File System Layer Basics**
-   - Volume superblock (fs/volume.go)
-   - Inode structures (fs/inode.go)
-   - Directory entries (fs/dentry.go)
+- **dentry.go**
+  - `func ReadDirectoryEntry(fs *FileSystem, dirID OID, name string) (*JDrecVal, error)`
+  - `func AddDirectoryEntry(fs *FileSystem, dirID OID, name string, fileID OID) error`
+  - `func RemoveDirectoryEntry(fs *FileSystem, dirID OID, name string) error`
+  - `func ListDirectoryEntries(fs *FileSystem, dirID OID) ([]DirectoryEntry, error)`
 
-6. **Data Access**
-   - Data streams (fs/datastream.go)
-   - File extents (fs/extents.go)
-   - Extended fields (fs/extfields.go)
+- **extattr.go**
+  - `func GetExtendedAttribute(fs *FileSystem, fileID OID, name string) ([]byte, error)`
+  - `func SetExtendedAttribute(fs *FileSystem, fileID OID, name string, data []byte) error`
+  - `func RemoveExtendedAttribute(fs *FileSystem, fileID OID, name string) error`
+  - `func ListExtendedAttributes(fs *FileSystem, fileID OID) ([]string, error)`
 
-7. **Extended Functionality**
-   - Extended attributes (fs/xattr.go)
-   - Hard link handling (fs/siblings.go)
-   - Snapshot support (snapshot/)
+- **datastream.go**
+  - `func ReadDataStream(fs *FileSystem, oid OID) (*JDstream, error)`
+  - `func WriteDataStream(fs *FileSystem, oid OID, stream *JDstream) error`
+  - `func AllocateDataStream(fs *FileSystem, size uint64) (OID, error)`
+  - `func ResizeDataStream(fs *FileSystem, oid OID, newSize uint64) error`
 
-8. **Encryption Support** (crypto/)
-   - Keybag handling
-   - Encryption/decryption utilities
+- **extent.go**
+  - `func ReadFileExtent(fs *FileSystem, fileID OID, logicalAddr uint64) (*JFileExtentVal, error)`
+  - `func AllocateFileExtent(fs *FileSystem, fileID OID, logicalAddr uint64, size uint64) error`
+  - `func FreeFileExtent(fs *FileSystem, fileID OID, logicalAddr uint64) error`
+  - `func ReadDataFromExtent(fs *FileSystem, extent *JFileExtentVal, offset int64, size int) ([]byte, error)`
+  - `func GetFileExtents(fs *FileSystem, fileID OID) ([]FileExtent, error)`
 
-9. **Advanced Features**
-   - Transaction handling (transaction/)
-   - Reaper implementation (container/reaper.go)
-   - Fusion drive support (fusion/)
+- **sibling.go**
+  - `func CreateHardLink(fs *FileSystem, targetID OID, dirID OID, name string) error`
+  - `func ReadSiblingLink(fs *FileSystem, siblingID uint64) (*JSiblingVal, error)`
+  - `func UpdateSiblingLink(fs *FileSystem, siblingID uint64, val *JSiblingVal) error`
+  - `func GetSiblingMap(fs *FileSystem, siblingID uint64) (*JSiblingMapVal, error)`
+  - `func GetPrimaryLink(fs *FileSystem, inodeID OID) (OID, string, error)`
 
-10. **Command-Line Tools**
-    - Info tool (cmd/apfs-info)
-    - Mount tool with FUSE (cmd/apfs-mount)
-    - Recovery tool (cmd/apfs-recover)
+- **crypto.go**
+  - `func ReadVolumeKeybag(device BlockDevice, sb *APFSSuperblock) (*KBLocker, error)`
+  - `func UnwrapVolumeKeybag(keybag *KBLocker, passwd string) error`
+  - `func GetFileKey(device BlockDevice, sb *APFSSuperblock, fileID OID) ([]byte, error)`
+  - `func EncryptFileData(data []byte, key []byte, tweak uint64) ([]byte, error)`
+  - `func DecryptFileData(data []byte, key []byte, tweak uint64) ([]byte, error)`
 
-This order follows a logical progression from the lowest-level building blocks to more advanced features, allowing you to build and test a basic read-only implementation before expanding to more complex features. I'd recommend implementing a minimal read-only file system first, then adding support for snapshots, encryption, and finally write capabilities.
+## pkg/io/
+- **blockdevice.go**
+  - `func NewBlockDevice(path string) (BlockDevice, error)`
+  - `func (d *DeviceImpl) ReadBlock(addr PAddr) ([]byte, error)`
+  - `func (d *DeviceImpl) WriteBlock(addr PAddr, data []byte) error`
+  - `func (d *DeviceImpl) GetBlockSize() uint32`
+  - `func (d *DeviceImpl) GetBlockCount() uint64`
+  - `func (d *DeviceImpl) Close() error`
+
+- **cache.go**
+  - `func NewBlockCache(device BlockDevice, cacheSize int) *BlockCache`
+  - `func (c *BlockCache) ReadBlock(addr PAddr) ([]byte, error)`
+  - `func (c *BlockCache) WriteBlock(addr PAddr, data []byte) error`
+  - `func (c *BlockCache) Flush() error`
+  - `func (c *BlockCache) Invalidate(addr PAddr) error`
+
+- **transaction.go**
+  - `func BeginTransaction(device BlockDevice, sb *NXSuperblock) (*Transaction, error)`
+  - `func (t *Transaction) CreateObject(objType, objSubtype uint32, size uint32) (OID, []byte, error)`
+  - `func (t *Transaction) UpdateObject(oid OID, data []byte) error`
+  - `func (t *Transaction) DeleteObject(oid OID) error`
+  - `func (t *Transaction) Commit() error`
+  - `func (t *Transaction) Abort() error`
+
+## pkg/crypto/
+- **keybag.go**
+  - `func ReadKeybag(data []byte) (*KBLocker, error)`
+  - `func CreateKeybag() *KBLocker`
+  - `func (k *KBLocker) AddEntry(uuid UUID, tag uint16, keyData []byte) error`
+  - `func (k *KBLocker) FindEntry(uuid UUID, tag uint16) (*KeybagEntry, error)`
+  - `func (k *KBLocker) Serialize() ([]byte, error)`
+
+- **key.go**
+  - `func DeriveKeyFromPassword(password string, salt []byte) ([]byte, error)`
+  - `func GenerateVolumeEncryptionKey() ([]byte, error)`
+  - `func WrapKey(key []byte, wrappingKey []byte) ([]byte, error)`
+  - `func UnwrapKey(wrappedKey []byte, wrappingKey []byte) ([]byte, error)`
+  - `func GenerateRecoveryKey() (string, []byte, error)`
+
+- **aes.go**
+  - `func NewAESXTSContext(key []byte) (*AESXTSContext, error)`
+  - `func (ctx *AESXTSContext) Encrypt(plaintext []byte, tweak uint64) ([]byte, error)`
+  - `func (ctx *AESXTSContext) Decrypt(ciphertext []byte, tweak uint64) ([]byte, error)`
+  - `func GenerateTweak(blockNum uint64, fileID uint64) uint64`
+  - `func ValidateEncryptionParameters(key []byte, data []byte) error`
+
+- **wrappers.go**
+  - `func UnwrapMetaCryptoState(state *WrappedMetaCryptoState, key []byte) error`
+  - `func UnwrapCryptoState(state *WrappedCryptoState, key []byte) ([]byte, error)`
+  - `func WrapCryptoState(key []byte, wrappingKey []byte, class uint32) (*WrappedCryptoState, error)`
+  - `func GetKeyClass(state *WrappedCryptoState) uint32`
+  - `func IsKeyRollingNeeded(state *WrappedCryptoState) bool`
+
+## pkg/snapshot/
+- **metadata.go**
+  - `func ReadSnapshotMetadata(fs *FileSystem, xid XID) (*JSnapMetadataVal, error)`
+  - `func GetSnapshotByName(fs *FileSystem, name string) (*JSnapMetadataVal, XID, error)`
+  - `func ListSnapshots(fs *FileSystem) ([]SnapshotInfo, error)`
+  - `func GetSnapshotExtendedMetadata(fs *FileSystem, xid XID) (*SnapMetaExt, error)`
+  - `func UpdateSnapshotMetadata(fs *FileSystem, xid XID, metadata *JSnapMetadataVal) error`
+
+- **operations.go**
+  - `func CreateSnapshot(fs *FileSystem, name string) (XID, error)`
+  - `func DeleteSnapshot(fs *FileSystem, xid XID) error`
+  - `func MountSnapshot(fs *FileSystem, xid XID) (*FileSystem, error)`
+  - `func RevertToSnapshot(fs *FileSystem, xid XID) error`
+  - `func IsSnapshotMountable(fs *FileSystem, xid XID) (bool, error)`
+
+## pkg/seal/
+- **integrity.go**
+  - `func ReadIntegrityMetadata(device BlockDevice, addr PAddr) (*IntegrityMetaPhys, error)`
+  - `func ValidateIntegrityMetadata(meta *IntegrityMetaPhys) error`
+  - `func CreateIntegrityMetadata(hashType HashType) (*IntegrityMetaPhys, error)`
+  - `func UpdateIntegrityMetadata(device BlockDevice, meta *IntegrityMetaPhys, addr PAddr) error`
+  - `func MarkSealBroken(device BlockDevice, meta *IntegrityMetaPhys, xid XID) error`
+
+- **hash.go**
+  - `func ComputeFileHash(fs *FileSystem, fileID OID, hashType HashType) ([]byte, error)`
+  - `func ComputeNodeHash(node *BTNodePhys, hashType HashType) ([]byte, error)`
+  - `func VerifyNodeHash(node *BTNodePhys, storedHash []byte, hashType HashType) (bool, error)`
+  - `func GetHashSize(hashType HashType) uint8`
+  - `func GetHashFunction(hashType HashType) HashFunction`
+
+## pkg/checksum/
+- **fletcher64.go**
+  - `func Fletcher64(data []byte) uint64`
+  - `func Fletcher64WithZeroedChecksum(data []byte, offset int) uint64`
+  - `func VerifyFletcher64Checksum(data []byte) bool`
+  - `func UpdateFletcher64Checksum(data []byte, offset int) []byte`
