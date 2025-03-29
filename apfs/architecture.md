@@ -4,7 +4,7 @@
 
 This architecture follows the layered design of Apple File System as described in the reference documentation, with a clear separation between the container layer and file-system layer.
 
-## Directory Structure
+### Refined Architecture
 
 ```
 apfs/
@@ -15,60 +15,79 @@ apfs/
 ├── internal/                # Non-exported internal packages
 │   └── binary/              # Binary parsing utilities
 └── pkg/                     # Exported package code
-    ├── checksum/            # Checksum
-    │   └── fletcher64.go    # Checksum algorithm
+    ├── checksum/            # Checksum implementation
+    │   └── fletcher64.go    # Fletcher64 checksum algorithm
     ├── types/               # Core types and constants
     │   ├── constants.go     # All APFS constants from the spec
-    │   ├── errors.go        # Error definitions
-    │   ├── types.go         # Common data structures and interfaces
-    │   ├── interfaces.go    # Extended interfaces
-    │   ├── structs.go       # All APFS on-disk data structures as Go structs
-    │   ├── binary.go        # Serialization/deserialization helpers
-    │   └── version.go       # Version compatibility checking
+    │   ├── container_types.go # Container layer data structures
+    │   ├── fs_types.go      # File system layer data structures
+    │   ├── interfaces.go    # Core interfaces (BlockDevice, etc.)
+    │   └── common.go        # Common types like UUID, PAddr, etc.
     ├── container/           # Container layer
-    │   ├── object.go        # Object structures (obj_phys_t)
-    │   ├── checkpoint.go    # Checkpoint mechanism + Checkpoint scanning
-    │   ├── container.go     # Container manager (nx_superblock_t)
-    │   ├── mount.go         # Container mounting procedures
-    │   ├── omap.go          # Object maps + Object resolution
-    │   ├── resolver.go      # Virtual object resolution
-    │   ├── spaceman.go      # Space manager
-    │   ├── btree.go         # B-tree structures
-    │   ├── navigator.go     # B-tree traversal helpers
-    │   └── reaper.go        # Reaper for delayed deletion
+    │   ├── object.go        # Object handling and common operations
+    │   ├── superblock.go    # Container superblock (nx_superblock_t)
+    │   ├── checkpoint.go    # Checkpoint management
+    │   ├── omap.go          # Object map operations
+    │   ├── btree.go         # B-tree operations (search, insert, etc.)
+    │   ├── btnode.go        # B-tree node implementation details
+    │   ├── spaceman.go      # Space manager implementation
+    │   ├── allocation.go    # Block allocation routines
+    │   ├── reaper.go        # Reaper implementation
+    │   └── encryption.go    # Container-level encryption (keybags)
     ├── fs/                  # File system layer
-    │   ├── volume.go        # Volume structures (apfs_superblock_t)
-    │   ├── mount.go         # Volume mounting operations
-    │   ├── navigator.go     # File system navigation
-    │   ├── inode.go         # Inode structures and operations
-    │   ├── dentry.go        # Directory entry structures
-    │   ├── lookup.go        # Path lookup and traversal
-    │   ├── file.go          # File access implementation
-    │   ├── directory.go     # Directory access implementation
-    │   ├── xattr.go         # Extended attributes
-    │   ├── datastream.go    # File data stream handling
-    │   ├── extents.go       # File extent management
-    │   ├── extfields.go     # Extended field handling
-    │   └── siblings.go      # Hard link management
+    │   ├── volume.go        # Volume superblock (apfs_superblock_t)
+    │   ├── tree.go          # File system tree operations
+    │   ├── inode.go         # Inode operations
+    │   ├── dentry.go        # Directory entry operations
+    │   ├── extattr.go       # Extended attributes handling
+    │   ├── datastream.go    # Data stream management
+    │   ├── extent.go        # File extent handling
+    │   ├── sibling.go       # Hard link management
+    │   └── crypto.go        # File-level encryption
+    ├── io/                  # I/O package
+    │   ├── blockdevice.go   # Block device implementations
+    │   ├── cache.go         # Caching layer for block reads
+    │   └── transaction.go   # Transaction handling and journaling
     ├── crypto/              # Encryption support
-    │   ├── keybag.go        # Keybag structures and handling
-    │   ├── keys.go          # KEK/VEK key management
-    │   └── crypto.go        # Encryption/decryption utilities
+    │   ├── keybag.go        # Keybag structures and operations
+    │   ├── key.go           # Key management (KEK/VEK)
+    │   ├── aes.go           # AES-XTS implementation
+    │   └── wrappers.go      # Key wrapping utilities
     ├── snapshot/            # Snapshot management
-    │   ├── snapshot.go      # Snapshot structures
-    │   └── operations.go    # Snapshot operations
-    ├── fusion/              # Fusion drive support
-    │   ├── fusion.go        # Fusion drive structures
-    │   └── tier.go          # Tier management
-    ├── transaction/         # Transaction handling
-    │   ├── transaction.go   # Transaction structures and operations
-    │   └── operations.go    # Operation interfaces
-    └── util/                # Utilities
-        ├── io.go            # I/O utilities
-        ├── checksum.go      # Fletcher64 implementation
-        ├── bits.go          # Bit manipulation utilities
-        └── uuid.go          # UUID handling
+    │   ├── metadata.go      # Snapshot metadata handling
+    │   └── operations.go    # Snapshot creation/deletion/mounting
+    └── seal/                # Sealed volume support
+        ├── integrity.go     # Integrity metadata
+        └── hash.go          # Hash algorithm implementations
 ```
+
+### key decisions
+
+1. **Layer-Specific Type Files**: Split types into `container_types.go` and `fs_types.go` to better reflect the layered architecture described in the spec.
+
+2. **B-Tree Structure**: Added `btnode.go` to handle the complex B-tree node structure described in pages 122-133 of the spec, separate from the higher-level operations.
+
+3. **Sealed Volumes**: Added a `seal` package to handle the sealed volumes functionality described on pages 150-158 of the spec.
+
+4. **I/O Package**: Separated I/O operations (including transaction handling) into their own package, which better reflects the different roles described in the spec.
+
+5. **Allocation Operations**: Added dedicated `allocation.go` for the space allocation functions, which are complex enough to warrant their own file based on pages 159-163.
+
+6. **Crypto Package Structure**: Reorganized the crypto package to better match the structures and operations described in pages 135-149 of the spec.
+
+### Implementation Considerations
+
+1. **Object Storage Methods**: The spec (p.10) describes three storage methods for objects: ephemeral, physical, and virtual. Your `object.go` should handle these distinctions explicitly.
+
+2. **Checkpoints**: The checkpoint mechanism (p.26-27) is central to crash protection, so `checkpoint.go` should implement both reading and writing of checkpoints.
+
+3. **Copy-on-Write**: Throughout the spec, it emphasizes that "objects on disk are never modified in place" (p.7). Ensure your implementation maintains this principle, especially in the transaction and B-tree code.
+
+4. **Object Map Design**: The spec (p.44-49) details how object maps use B-trees to map from virtual object identifiers to physical addresses. Your `omap.go` should implement this lookup mechanism carefully.
+
+5. **B-Tree Complex Layout**: The B-tree implementation (p.122-133) has unique characteristics including separate storage areas for keys and values growing from opposite ends. Ensure `btnode.go` captures these details.
+
+This refined architecture closely follows the Apple File System specification while maintaining a clean, logical structure that will be maintainable and extensible as you implement more advanced features.
 
 Looking at the APFS reference document and your Go project architecture, I'd recommend implementing the system in the following logical order:
 
