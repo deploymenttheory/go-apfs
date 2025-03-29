@@ -15,6 +15,14 @@ apfs/
 ├── internal/                # Non-exported internal packages
 │   └── binary/              # Binary parsing utilities
 └── pkg/                     # Exported package code
+pkg/
+├── service/
+│   ├── container_manager.go
+│   ├── volume_manager.go
+│   ├── space_manager.go
+│   ├── transaction_manager.go
+│   ├── crypto_manager.go
+│   └── object_manager.go
     ├── checksum/            # Checksum implementation
     │   └── fletcher64.go    # Fletcher64 checksum algorithm
     ├── types/               # Core types and constants
