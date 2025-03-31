@@ -6,7 +6,7 @@ This architecture follows the layered design of Apple File System as described i
 
 ## Directory Structure
 
-```
+```bash
 apfs/
 ├── cmd/                     # Command-line interfaces
 │   ├── apfs-info/           # Tool to display APFS container/volume info
@@ -15,59 +15,57 @@ apfs/
 ├── internal/                # Non-exported internal packages
 │   └── binary/              # Binary parsing utilities
 └── pkg/                     # Exported package code
-    ├── checksum/            # Checksum
-    │   └── fletcher64.go    # Checksum algorithm
+    ├── service/
+    │   ├── container_manager.go
+    │   ├── volume_manager.go
+    │   ├── space_manager.go
+    │   ├── transaction_manager.go
+    │   ├── crypto_manager.go
+    │   └── object_manager.go
+    ├── checksum/            # Checksum implementation
+    │   └── fletcher64.go    # Fletcher64 checksum algorithm
     ├── types/               # Core types and constants
     │   ├── constants.go     # All APFS constants from the spec
-    │   ├── errors.go        # Error definitions
-    │   ├── types.go         # Common data structures and interfaces
-    │   ├── interfaces.go    # Extended interfaces
-    │   ├── structs.go       # All APFS on-disk data structures as Go structs
-    │   ├── binary.go        # Serialization/deserialization helpers
-    │   └── version.go       # Version compatibility checking
+    │   ├── container_types.go # Container layer data structures
+    │   ├── fs_types.go      # File system layer data structures
+    │   ├── interfaces.go    # Core interfaces (BlockDevice, etc.)
+    │   └── common.go        # Common types like UUID, PAddr, etc.
     ├── container/           # Container layer
-    │   ├── object.go        # Object structures (obj_phys_t)
-    │   ├── checkpoint.go    # Checkpoint mechanism + Checkpoint scanning
-    │   ├── container.go     # Container manager (nx_superblock_t)
-    │   ├── mount.go         # Container mounting procedures
-    │   ├── omap.go          # Object maps + Object resolution
-    │   ├── resolver.go      # Virtual object resolution
-    │   ├── spaceman.go      # Space manager
-    │   ├── btree.go         # B-tree structures
-    │   ├── navigator.go     # B-tree traversal helpers
-    │   └── reaper.go        # Reaper for delayed deletion
+    │   ├── object.go        # Object handling and common operations
+    │   ├── superblock.go    # Container superblock (nx_superblock_t)
+    │   ├── checkpoint.go    # Checkpoint management
+    │   ├── omap.go          # Object map operations
+    │   ├── btree.go         # B-tree operations (search, insert, etc.)
+    │   ├── btnode.go        # B-tree node implementation details
+    │   ├── spaceman.go      # Space manager implementation
+    │   ├── allocation.go    # Block allocation routines
+    │   ├── reaper.go        # Reaper implementation
+    │   └── encryption.go    # Container-level encryption (keybags)
     ├── fs/                  # File system layer
-    │   ├── volume.go        # Volume structures (apfs_superblock_t)
-    │   ├── mount.go         # Volume mounting operations
-    │   ├── navigator.go     # File system navigation
-    │   ├── inode.go         # Inode structures and operations
-    │   ├── dentry.go        # Directory entry structures
-    │   ├── lookup.go        # Path lookup and traversal
-    │   ├── file.go          # File access implementation
-    │   ├── directory.go     # Directory access implementation
-    │   ├── xattr.go         # Extended attributes
-    │   ├── datastream.go    # File data stream handling
-    │   ├── extents.go       # File extent management
-    │   ├── extfields.go     # Extended field handling
-    │   └── siblings.go      # Hard link management
+    │   ├── volume.go        # Volume superblock (apfs_superblock_t)
+    │   ├── tree.go          # File system tree operations
+    │   ├── inode.go         # Inode operations
+    │   ├── dentry.go        # Directory entry operations
+    │   ├── extattr.go       # Extended attributes handling
+    │   ├── datastream.go    # Data stream management
+    │   ├── extent.go        # File extent handling
+    │   ├── sibling.go       # Hard link management
+    │   └── crypto.go        # File-level encryption
+    ├── io/                  # I/O package
+    │   ├── blockdevice.go   # Block device implementations
+    │   ├── cache.go         # Caching layer for block reads
+    │   └── transaction.go   # Transaction handling and journaling
     ├── crypto/              # Encryption support
-    │   ├── keybag.go        # Keybag structures and handling
-    │   ├── keys.go          # KEK/VEK key management
-    │   └── crypto.go        # Encryption/decryption utilities
+    │   ├── keybag.go        # Keybag structures and operations
+    │   ├── key.go           # Key management (KEK/VEK)
+    │   ├── aes.go           # AES-XTS implementation
+    │   └── wrappers.go      # Key wrapping utilities
     ├── snapshot/            # Snapshot management
-    │   ├── snapshot.go      # Snapshot structures
-    │   └── operations.go    # Snapshot operations
-    ├── fusion/              # Fusion drive support
-    │   ├── fusion.go        # Fusion drive structures
-    │   └── tier.go          # Tier management
-    ├── transaction/         # Transaction handling
-    │   ├── transaction.go   # Transaction structures and operations
-    │   └── operations.go    # Operation interfaces
-    └── util/                # Utilities
-        ├── io.go            # I/O utilities
-        ├── checksum.go      # Fletcher64 implementation
-        ├── bits.go          # Bit manipulation utilities
-        └── uuid.go          # UUID handling
+    │   ├── metadata.go      # Snapshot metadata handling
+    │   └── operations.go    # Snapshot creation/deletion/mounting
+    └── seal/                # Sealed volume support
+        ├── integrity.go     # Integrity metadata
+        └── hash.go          # Hash algorithm implementations
 ```
 
 Looking at the APFS reference document and your Go project architecture, I'd recommend implementing the system in the following logical order:
