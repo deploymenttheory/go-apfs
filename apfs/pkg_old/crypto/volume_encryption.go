@@ -29,7 +29,7 @@ func EncryptVolume(volume *types.APFSSuperblock, password string, device types.B
 	}
 
 	// Derive a Key Encryption Key (KEK) from the password
-	salt := volume.UUID[:]
+	salt := volume.VolumeUUID[:]
 	kek, err := DeriveKeyFromPassword(password, salt)
 	if err != nil {
 		return fmt.Errorf("failed to derive key encryption key: %w", err)
@@ -42,10 +42,10 @@ func EncryptVolume(volume *types.APFSSuperblock, password string, device types.B
 	}
 
 	// Create a keybag for the volume
-	keybag := CreateKeybag(volume.UUID)
+	keybag := CreateKeybag(volume.VolumeUUID)
 
 	// Add the wrapped VEK to the keybag
-	err = AddKeyToKeybag(keybag, wrappedVEK, types.KBTagVolumeKey, volume.UUID)
+	err = AddKeyToKeybag(keybag, wrappedVEK, types.KBTagVolumeKey, volume.VolumeUUID)
 	if err != nil {
 		return fmt.Errorf("failed to add volume key to keybag: %w", err)
 	}
@@ -56,7 +56,7 @@ func EncryptVolume(volume *types.APFSSuperblock, password string, device types.B
 		return fmt.Errorf("failed to create unlock record: %w", err)
 	}
 
-	err = AddKeyToKeybag(keybag, unlockRecord, types.KBTagVolumeUnlockRecords, volume.UUID)
+	err = AddKeyToKeybag(keybag, unlockRecord, types.KBTagVolumeUnlockRecords, volume.VolumeUUID)
 	if err != nil {
 		return fmt.Errorf("failed to add unlock record to keybag: %w", err)
 	}

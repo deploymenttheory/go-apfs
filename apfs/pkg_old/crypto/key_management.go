@@ -3,13 +3,13 @@ package crypto
 
 import (
 	"crypto/aes"
-	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // Key sizes
@@ -219,7 +219,6 @@ func FormatRecoveryKey(rawKey []byte) (string, error) {
 	}
 
 	charset := []byte(RecoveryKeyEncodingCharset)
-	charsetLen := big.NewInt(int64(len(charset)))
 
 	// Convert raw bytes to base32-like encoding with the custom charset
 	var formattedGroups []string

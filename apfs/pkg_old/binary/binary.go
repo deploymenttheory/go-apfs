@@ -6,6 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/container"
+	"github.com/deploymenttheory/go-apfs/apfs/pkg/types"
 )
 
 // BinaryReader helps with reading binary data
@@ -68,30 +71,30 @@ func (br *BinaryReader) ReadUint64() (uint64, error) {
 	return val, err
 }
 
-// ReadOID reads an OID
-func (br *BinaryReader) ReadOID() (OID, error) {
-	var val OID
+// Readtypes.OID reads an types.OID
+func (br *BinaryReader) ReadOID() (types.OID, error) {
+	var val types.OID
 	err := br.Read(&val)
 	return val, err
 }
 
 // ReadXID reads an XID
-func (br *BinaryReader) ReadXID() (XID, error) {
-	var val XID
+func (br *BinaryReader) ReadXID() (types.XID, error) {
+	var val types.XID
 	err := br.Read(&val)
 	return val, err
 }
 
 // ReadPAddr reads a PAddr
-func (br *BinaryReader) ReadPAddr() (PAddr, error) {
-	var val PAddr
+func (br *BinaryReader) ReadPAddr() (types.PAddr, error) {
+	var val types.PAddr
 	err := br.Read(&val)
 	return val, err
 }
 
 // ReadUUID reads a UUID
-func (br *BinaryReader) ReadUUID() (UUID, error) {
-	var val UUID
+func (br *BinaryReader) ReadUUID() (types.UUID, error) {
+	var val types.UUID
 	err := br.Read(&val)
 	return val, err
 }
@@ -189,9 +192,9 @@ func (br *BinaryReader) ReadUint64Array(count int) ([]uint64, error) {
 	return result, nil
 }
 
-// ReadOIDArray reads an array of OID values of the specified length
-func (br *BinaryReader) ReadOIDArray(count int) ([]OID, error) {
-	result := make([]OID, count)
+// Readtypes.OIDArray reads an array of types.OID values of the specified length
+func (br *BinaryReader) ReadOIDArray(count int) ([]types.OID, error) {
+	result := make([]types.OID, count)
 	for i := 0; i < count; i++ {
 		val, err := br.ReadOID()
 		if err != nil {
@@ -243,23 +246,23 @@ func (bw *BinaryWriter) WriteUint64(val uint64) error {
 	return bw.Write(val)
 }
 
-// WriteOID writes an OID
-func (bw *BinaryWriter) WriteOID(val OID) error {
+// Writetypes.OID writes an types.OID
+func (bw *BinaryWriter) WriteOID(val types.OID) error {
 	return bw.Write(val)
 }
 
 // WriteXID writes an XID
-func (bw *BinaryWriter) WriteXID(val XID) error {
+func (bw *BinaryWriter) WriteXID(val types.XID) error {
 	return bw.Write(val)
 }
 
 // WritePAddr writes a PAddr
-func (bw *BinaryWriter) WritePAddr(val PAddr) error {
+func (bw *BinaryWriter) WritePAddr(val types.PAddr) error {
 	return bw.Write(val)
 }
 
 // WriteUUID writes a UUID
-func (bw *BinaryWriter) WriteUUID(val UUID) error {
+func (bw *BinaryWriter) WriteUUID(val types.UUID) error {
 	return bw.Write(val)
 }
 
@@ -300,18 +303,18 @@ func (bw *BinaryWriter) WriteStringWithLen(s string, length int) error {
 }
 
 // WriteBlock serializes a structure and writes it to a block device
-func WriteBlock(device BlockDevice, addr PAddr, obj interface{}) error {
+func WriteBlock(device types.BlockDevice, addr types.PAddr, obj interface{}) error {
 	var data []byte
 	var err error
 
 	// Serialize based on object type
 	switch v := obj.(type) {
-	case *NXSuperblock:
-		data, err = SerializeNXSuperblock(v)
-	case *APFSSuperblock:
-		data, err = SerializeAPFSSuperblock(v)
-	case *BTNodePhys:
-		data, err = SerializeBTNodePhys(v)
+	case *types.NXSuperblock:
+		data, err = container.SerializeNXSuperblock(v)
+	case *types.APFSSuperblock:
+		data, err = container.SerializeAPFSSuperblock(v)
+	case *types.BTNodePhys:
+		data, err = container.SerializeBTNodePhys(v)
 	// Add cases for other object types
 	default:
 		return fmt.Errorf("unsupported object type: %T", obj)
