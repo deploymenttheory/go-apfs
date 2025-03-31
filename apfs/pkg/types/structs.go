@@ -9,48 +9,50 @@ import (
 // Container Layer Structures
 // =============================================================================
 
+// === NX Superblock Structs ===
+
 // NXSuperblock represents a container superblock (nx_superblock_t)
 type NXSuperblock struct {
-	Header                 ObjectHeader // Object header
-	Magic                  uint32       // Magic ('NXSB')
-	BlockSize              uint32       // Block size
-	BlockCount             uint64       // Number of blocks
-	Features               uint64       // Optional features
-	ReadOnlyCompatFeatures uint64       // Read-only compatible features
-	IncompatFeatures       uint64       // Incompatible features
-	UUID                   UUID         // Container UUID
-	NextOID                OID          // Next object ID
-	NextXID                XID          // Next transaction ID
-	XPDescBlocks           uint32       // Checkpoint descriptor blocks
-	XPDataBlocks           uint32       // Checkpoint data blocks
-	XPDescBase             PAddr        // Checkpoint descriptor base
-	XPDataBase             PAddr        // Checkpoint data base
-	XPDescNext             uint32       // Next checkpoint descriptor
-	XPDataNext             uint32       // Next checkpoint data
-	XPDescIndex            uint32       // Checkpoint descriptor index
-	XPDescLen              uint32       // Checkpoint descriptor length
-	XPDataIndex            uint32       // Checkpoint data index
-	XPDataLen              uint32       // Checkpoint data length
-	SpacemanOID            OID          // Space manager OID
-	OMapOID                OID          // Object map OID
-	ReaperOID              OID          // Reaper OID
-	TestType               uint32       // For testing
-	MaxFileSystems         uint32       // Max number of volumes
-	FSOID                  [100]OID     // Volume OIDs
-	Counters               [32]uint64   // Array of counters
-	BlockedOutPRange       PRange       // Blocked out p range
-	EvictMappingTreeOID    OID          // Evict mapping tree OID
-	Flags                  uint64       // Flags
-	EFIJumpstart           PAddr        // EFI jumpstart
-	FusionUUID             UUID         // Fusion UUID
-	KeyLocker              PRange       // Keybag location
-	EphemeralInfo          [4]uint64    // Ephemeral info
-	TestOID                OID          // Test OID
-	FusionMtOID            OID          // Fusion middle tree OID
-	FusionWbcOID           OID          // Fusion write-back cache OID
-	FusionWbc              PRange       // Fusion write-back cache
-	NewestMountedVersion   uint64       // Newest mounted version
-	MkbLocker              PRange       // Media key locker
+	ObjectHeader           ObjectHeader // obj_phys_t nx_o;
+	Magic                  uint32       // nx_magic ('NXSB')
+	BlockSize              uint32       // nx_block_size
+	BlockCount             uint64       // nx_block_count
+	Features               uint64       // nx_features
+	ReadOnlyCompatFeatures uint64       // nx_readonly_compatible_features
+	IncompatFeatures       uint64       // nx_incompatible_features
+	UUID                   UUID         // nx_uuid
+	NextOID                OID          // nx_next_oid
+	NextXID                XID          // nx_next_xid
+	XPDescBlocks           uint32       // nx_xp_desc_blocks
+	XPDataBlocks           uint32       // nx_xp_data_blocks
+	XPDescBase             PAddr        // nx_xp_desc_base
+	XPDataBase             PAddr        // nx_xp_data_base
+	XPDescNext             uint32       // nx_xp_desc_next
+	XPDataNext             uint32       // nx_xp_data_next
+	XPDescIndex            uint32       // nx_xp_desc_index
+	XPDescLen              uint32       // nx_xp_desc_len
+	XPDataIndex            uint32       // nx_xp_data_index
+	XPDataLen              uint32       // nx_xp_data_len
+	SpacemanOID            OID          // nx_spaceman_oid
+	OMapOID                OID          // nx_omap_oid
+	ReaperOID              OID          // nx_reaper_oid
+	TestType               uint32       // nx_test_type
+	MaxFileSystems         uint32       // nx_max_file_systems
+	FSOID                  [100]OID     // nx_fs_oid[NX_MAX_FILE_SYSTEMS]
+	Counters               [32]uint64   // nx_counters[NX_NUM_COUNTERS]
+	BlockedOutPRange       PRange       // nx_blocked_out_prange
+	EvictMappingTreeOID    OID          // nx_evict_mapping_tree_oid
+	Flags                  uint64       // nx_flags
+	EFIJumpstart           PAddr        // nx_efi_jumpstart
+	FusionUUID             UUID         // nx_fusion_uuid
+	KeyLocker              PRange       // nx_keylocker
+	EphemeralInfo          [4]uint64    // nx_ephemeral_info[NX_EPH_INFO_COUNT]
+	TestOID                OID          // nx_test_oid
+	FusionMtOID            OID          // nx_fusion_mt_oid
+	FusionWbcOID           OID          // nx_fusion_wbc_oid
+	FusionWbc              PRange       // nx_fusion_wbc
+	NewestMountedVersion   uint64       // nx_newest_mounted_version
+	MkbLocker              PRange       // nx_mkb_locker
 }
 
 // IsValid checks if the superblock has a valid magic number
@@ -566,56 +568,68 @@ func (im *IntegrityMetaPhys) IsVersionValid() bool {
 // File System Layer Structures
 // =============================================================================
 
+// === APFS Superblock Structs ===
+
 // APFSSuperblock represents a volume superblock (apfs_superblock_t)
 type APFSSuperblock struct {
-	Header                 ObjectHeader    // Object header
-	Magic                  uint32          // Magic ('APSB')
-	FSIndex                uint32          // Index in container's array
-	Features               uint64          // Optional features
-	ReadOnlyCompatFeatures uint64          // Read-only compatible features
-	IncompatFeatures       uint64          // Incompatible features
-	UnmountTime            uint64          // Last unmount time (nanoseconds)
-	ReserveBlockCount      uint64          // Reserved block count
-	QuotaBlockCount        uint64          // Quota block count
-	AllocCount             uint64          // Allocated block count
-	MetaCrypto             MetaCryptoState // Metadata crypto state
-	RootTreeType           uint32          // Root tree type
-	ExtentrefTreeType      uint32          // Extent reference tree type
-	SnapMetaTreeType       uint32          // Snapshot metadata tree type
-	OMapOID                OID             // Object map OID
-	RootTreeOID            OID             // Root tree OID
-	ExtentrefTreeOID       OID             // Extent reference tree OID
-	SnapMetaTreeOID        OID             // Snapshot metadata tree OID
-	RevertToXID            XID             // Revert to transaction ID
-	RevertToSblockOID      OID             // Revert to superblock OID
-	NextObjID              uint64          // Next object ID
-	NumFiles               uint64          // Number of files
-	NumDirectories         uint64          // Number of directories
-	NumSymlinks            uint64          // Number of symlinks
-	NumOtherFSObjects      uint64          // Number of other objects
-	NumSnapshots           uint64          // Number of snapshots
-	TotalBlocksAlloced     uint64          // Total blocks allocated
-	TotalBlocksFreed       uint64          // Total blocks freed
-	UUID                   UUID            // Volume UUID
-	LastModTime            uint64          // Last modification time
-	FSFlags                uint64          // Flags
-	FormattedBy            ModifiedBy      // Formatted by
-	ModifiedBy             [8]ModifiedBy   // Modified by history
-	VolName                [256]byte       // Volume name
-	NextDocID              uint32          // Next document ID
-	Role                   uint16          // Role (system, data, etc.)
-	Reserved               uint16          // Reserved
-	RootToXID              XID             // Root from transaction ID
-	ERStateOID             OID             // Encryption rolling state OID
-	CloneinfoIDEpoch       uint64          // Clone info ID epoch
-	CloneinfoXID           uint64          // Clone info transaction ID
-	SnapMetaExtOID         OID             // Extended snapshot metadata OID
-	VolumeGroupID          UUID            // Volume group UUID
-	IntegrityMetaOID       OID             // Integrity metadata OID
-	FextTreeOID            OID             // File extent tree OID
-	FextTreeType           uint32          // File extent tree type
-	ReservedType           uint32          // Reserved
-	ReservedOID            OID             // Reserved
+	ObjectHeader           ObjectHeader  // obj_phys_t apfs_o;
+	Magic                  uint32        // apfs_magic
+	FSIndex                uint32        // apfs_fs_index
+	Features               uint64        // apfs_features
+	ReadOnlyCompatFeatures uint64        // apfs_readonly_compatible_features
+	IncompatFeatures       uint64        // apfs_incompatible_features
+	UnmountTime            uint64        // apfs_unmount_time
+	FSReserveBlockCount    uint64        // apfs_fs_reserve_block_count
+	FSQuotaBlockCount      uint64        // apfs_fs_quota_block_count
+	FSAllocCount           uint64        // apfs_fs_alloc_count
+	MetaCrypto             MetaCrypto    // apfs_meta_crypto
+	RootTreeType           uint32        // apfs_root_tree_type
+	ExtentRefTreeType      uint32        // apfs_extentref_tree_type
+	SnapMetaTreeType       uint32        // apfs_snap_meta_tree_type
+	OMapOID                OID           // apfs_omap_oid
+	RootTreeOID            OID           // apfs_root_tree_oid
+	ExtentRefTreeOID       OID           // apfs_extentref_tree_oid
+	SnapMetaTreeOID        OID           // apfs_snap_meta_tree_oid
+	RevertToXID            XID           // apfs_revert_to_xid
+	RevertToSBlockOID      OID           // apfs_revert_to_sblock_oid
+	NextObjectID           uint64        // apfs_next_obj_id
+	NumFiles               uint64        // apfs_num_files
+	NumDirectories         uint64        // apfs_num_directories
+	NumSymlinks            uint64        // apfs_num_symlinks
+	NumOtherFSObjects      uint64        // apfs_num_other_fsobjects
+	NumSnapshots           uint64        // apfs_num_snapshots
+	TotalBlocksAllocated   uint64        // apfs_total_blocks_alloced
+	TotalBlocksFreed       uint64        // apfs_total_blocks_freed
+	VolumeUUID             UUID          // apfs_vol_uuid
+	LastModTime            uint64        // apfs_last_mod_time
+	FSFlags                uint64        // apfs_fs_flags
+	FormattedBy            ModifiedBy    // apfs_formatted_by
+	ModifiedBy             [8]ModifiedBy // apfs_modified_by[APFS_MAX_HIST]
+	VolumeName             [256]byte     // apfs_volname[APFS_VOLNAME_LEN]
+	NextDocID              uint32        // apfs_next_doc_id
+	Role                   uint16        // apfs_role
+	Reserved               uint16        // reserved
+	RootToXID              XID           // apfs_root_to_xid
+	ERStateOID             OID           // apfs_er_state_oid
+	CloneInfoIDEpoch       uint64        // apfs_cloneinfo_id_epoch
+	CloneInfoXID           uint64        // apfs_cloneinfo_xid
+	SnapMetaExtOID         OID           // apfs_snap_meta_ext_oid
+	VolumeGroupID          UUID          // apfs_volume_group_id
+	IntegrityMetaOID       OID           // apfs_integrity_meta_oid
+	FextTreeOID            OID           // apfs_fext_tree_oid
+	FextTreeType           uint32        // apfs_fext_tree_type
+	ReservedType           uint32        // reserved_type
+	ReservedOID            OID           // reserved_oid
+}
+
+// MetaCrypto represents wrapped_meta_crypto_state_t
+type MetaCrypto struct {
+	MajorVersion uint32    // major_version
+	MinorVersion uint32    // minor_version
+	UUID         UUID      // uuid
+	KeyEpoch     uint32    // key_epoch
+	Reserved     uint32    // reserved
+	KeyMaterial  [296]byte // key_material (typically 296 bytes, may vary)
 }
 
 // IsValid checks if the superblock has a valid magic number
@@ -678,21 +692,16 @@ func (sb *APFSSuperblock) IsData() bool {
 	return (sb.Role & APFSVolRoleData) != 0
 }
 
-// VolumeName returns the volume name as a string
-func (sb *APFSSuperblock) VolumeName() string {
+// VolumeNameString returns the volume name as a string
+func (sb *APFSSuperblock) VolumeNameString() string {
 	// Find null terminator
 	nameLen := 0
-	for ; nameLen < len(sb.VolName); nameLen++ {
-		if sb.VolName[nameLen] == 0 {
+	for ; nameLen < len(sb.VolumeName); nameLen++ {
+		if sb.VolumeName[nameLen] == 0 {
 			break
 		}
 	}
-	return string(sb.VolName[:nameLen])
-}
-
-// HasIntegrityMeta returns true if the volume has integrity metadata
-func (sb *APFSSuperblock) HasIntegrityMeta() bool {
-	return sb.IntegrityMetaOID != 0 && sb.IsSealed()
+	return string(sb.VolumeName[:nameLen])
 }
 
 // ModifiedBy represents information about software that modified the volume (apfs_modified_by_t)
