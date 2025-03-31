@@ -269,3 +269,23 @@ type KeyProviderExtended interface {
 	// IsUnlocked returns true if the volume is unlocked
 	IsUnlocked(volumeUUID UUID) bool
 }
+
+// === Space Manager Interface ===
+
+// SpaceManager defines the interface for space management operations
+type SpaceManager interface {
+	// AllocateBlock allocates a free block and returns its address
+	AllocateBlock() (PAddr, error)
+
+	// FreeBlock marks a block as free in the space manager
+	FreeBlock(addr PAddr) error
+
+	// IsBlockAllocated checks if a block is currently allocated
+	IsBlockAllocated(addr PAddr) (bool, error)
+
+	// GetFreeBlockCount returns the number of free blocks available
+	GetFreeBlockCount() (uint64, error)
+
+	// GetContiguousBlocks attempts to allocate multiple contiguous blocks
+	GetContiguousBlocks(count uint32) (PAddr, error)
+}

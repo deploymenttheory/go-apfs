@@ -197,6 +197,36 @@ func (s *OMapSnapshot) IsReverted() bool {
 	return (s.Flags & OMapSnapshotReverted) != 0
 }
 
+// === Space Manager Structs ===
+
+// SpacemanPhys represents the space manager (spaceman_phys_t)
+type SpacemanPhys struct {
+	Header              ObjectHeader             // Object header
+	BlockSize           uint32                   // Block size
+	BlocksPerChunk      uint32                   // Blocks per chunk
+	ChunksPerCIB        uint32                   // Chunks per CIB
+	CIBsPerCAB          uint32                   // CIBs per CAB
+	Devices             [2]SpacemanDeviceInfo    // Main and tier2 devices
+	Flags               uint32                   // Flags
+	IPBmTxMultiplier    uint32                   // Internal pool bitmap TX multiplier
+	IPBlockCount        uint64                   // Internal pool block count
+	IPBmSizeInBlocks    uint32                   // Internal pool bitmap size
+	IPBmBlockCount      uint32                   // Internal pool bitmap block count
+	IPBmBase            PAddr                    // Internal pool bitmap base
+	IPBase              PAddr                    // Internal pool base
+	FSReserveBlockCount uint64                   // FS reserve block count
+	FSReserveAllocCount uint64                   // FS reserve alloc count
+	FreeQueues          [3]SpacemanFreeQueue     // Free queues: [0]=IP, [1]=main, [2]=tier2
+	IPBmFreeHead        uint16                   // Internal pool bitmap free head
+	IPBmFreeTail        uint16                   // Internal pool bitmap free tail
+	IPBmXidOffset       uint32                   // Internal pool bitmap XID offset
+	IPBitmapOffset      uint32                   // Internal pool bitmap offset
+	IPBmFreeNextOffset  uint32                   // Internal pool bitmap free next offset
+	Version             uint32                   // Version
+	StructSize          uint32                   // Structure size
+	Datazone            SpacemanDatazoneInfoPhys // Per-device allocation zone metadata (nested)
+}
+
 // SpacemanDeviceInfo represents device-specific space manager information (spaceman_device_t)
 type SpacemanDeviceInfo struct {
 	BlockCount uint64 // Total blocks
@@ -220,38 +250,29 @@ type SpacemanFreeQueue struct {
 	Reserved      uint64 // Reserved
 }
 
-// SpacemanPhys represents the space manager (spaceman_phys_t)
-type SpacemanPhys struct {
-	Header              ObjectHeader          // Object header
-	BlockSize           uint32                // Block size
-	BlocksPerChunk      uint32                // Blocks per chunk
-	ChunksPerCIB        uint32                // Chunks per CIB
-	CIBsPerCAB          uint32                // CIBs per CAB
-	Devices             [2]SpacemanDeviceInfo // Main and tier2 devices
-	Flags               uint32                // Flags
-	IPBmTxMultiplier    uint32                // Internal pool bitmap TX multiplier
-	IPBlockCount        uint64                // Internal pool block count
-	IPBmSizeInBlocks    uint32                // Internal pool bitmap size
-	IPBmBlockCount      uint32                // Internal pool bitmap block count
-	IPBmBase            PAddr                 // Internal pool bitmap base
-	IPBase              PAddr                 // Internal pool base
-	FSReserveBlockCount uint64                // FS reserve block count
-	FSReserveAllocCount uint64                // FS reserve alloc count
-	FreeQueues          [3]SpacemanFreeQueue  // Free queues (IP, main, tier2)
-	IPBmFreeHead        uint16                // Internal pool bitmap free head
-	IPBmFreeTail        uint16                // Internal pool bitmap free tail
-	IPBmXidOffset       uint32                // Internal pool bitmap XID offset
-	IPBitmapOffset      uint32                // Internal pool bitmap offset
-	IPBmFreeNextOffset  uint32                // Internal pool bitmap free next offset
-	Version             uint32                // Version
-	StructSize          uint32                // Structure size
-	// Skip datazone_info_phys_t for now - complex structure
+// SpacemanDatazoneInfoPhys represents spaceman_datazone_info_phys_t
+type SpacemanDatazoneInfoPhys struct {
+	// AllocationZones[device][zone]
+	// device: 0 = main, 1 = tier2
+	// zone: 0–7 (SM_DATAZONE_ALLOCZONE_COUNT = 8)
+	AllocationZones [2][8]SpacemanAllocationZoneInfoPhys // Per-device, per-zone allocation stats
+}
+
+// SpacemanAllocationZoneInfoPhys represents spaceman_allocation_zone_info_phys_t
+type SpacemanAllocationZoneInfoPhys struct {
+	UsableBlockCount   uint64 // Blocks that can be used for allocations
+	BitmapBlockCount   uint64 // Blocks used by the bitmap itself
+	BitmapExtentsCount uint64 // Number of extents in the bitmap
+	AllocCount         uint64 // Number of allocations performed
+	DeallocCount       uint64 // Number of deallocations performed
 }
 
 // IsVersioned returns true if the space manager is versioned
 func (sm *SpacemanPhys) IsVersioned() bool {
 	return (sm.Flags & 0x00000001) != 0 // SM_FLAG_VERSIONED
 }
+
+// === Chunk Structs ===
 
 // ChunkInfo represents information about a chunk of blocks (chunk_info_t)
 type ChunkInfo struct {
@@ -283,6 +304,8 @@ type EvictMappingVal struct {
 	DstPAddr PAddr  // Destination address
 	Length   uint64 // Length
 }
+
+// === B tree Structs ===
 
 // BTNodePhys represents a B-tree node (btree_node_phys_t)
 type BTNodePhys struct {
@@ -369,6 +392,8 @@ type BTreeNodeIndexVal struct {
 	ChildOID  OID    // Child node OID
 	ChildHash []byte // Child node hash (variable length)
 }
+
+// === Reaper Structs ===
 
 // NXReaperPhys represents the reaper structure (nx_reaper_phys_t)
 type NXReaperPhys struct {

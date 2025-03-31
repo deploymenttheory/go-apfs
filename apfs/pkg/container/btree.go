@@ -68,6 +68,63 @@ func ReadBTreeNodePhys(device types.BlockDevice, addr types.PAddr) (*types.BTNod
 	return node, nil
 }
 
+// WriteBTreeNodePhys writes a BTreeNodePhys back to the device with proper checksum calculation.
+func WriteBTreeNodePhys(device types.BlockDevice, addr types.PAddr, node *types.BTNodePhys) error {
+	blockSize := device.GetBlockSize()
+
+	// Create a new buffer for the complete node data
+	data := make([]byte, blockSize)
+
+	// Copy header fields to data buffer
+	// Zero out the checksum field which will be calculated
+	for i := 0; i < 8; i++ {
+		data[i] = 0
+	}
+
+	// Copy OID, XID, Type, Subtype from the original header
+	// The provided node.Data should be the raw data without the object header
+	// So we need to preserve the header fields from the original block
+
+	// Set node-specific fields
+	binary.LittleEndian.PutUint16(data[32:34], node.Flags)
+	binary.LittleEndian.PutUint16(data[34:36], node.Level)
+	binary.LittleEndian.PutUint32(data[36:40], node.NKeys)
+
+	// Table space
+	binary.LittleEndian.PutUint16(data[40:42], node.TableSpace.Off)
+	binary.LittleEndian.PutUint16(data[42:44], node.TableSpace.Len)
+
+	// Free space
+	binary.LittleEndian.PutUint16(data[44:46], node.FreeSpace.Off)
+	binary.LittleEndian.PutUint16(data[46:48], node.FreeSpace.Len)
+
+	// Key free list
+	binary.LittleEndian.PutUint16(data[48:50], node.KeyFreeList.Off)
+	binary.LittleEndian.PutUint16(data[50:52], node.KeyFreeList.Len)
+
+	// Value free list
+	binary.LittleEndian.PutUint16(data[52:54], node.ValFreeList.Off)
+	binary.LittleEndian.PutUint16(data[54:56], node.ValFreeList.Len)
+
+	// Copy the Data section
+	if len(node.Data) > 0 {
+		copy(data[BTNodePhysSize:], node.Data)
+	}
+
+	// Calculate the checksum
+	computedChecksum := checksum.Fletcher64WithZeroedChecksum(data, 0)
+
+	// Update the checksum in the data buffer
+	binary.LittleEndian.PutUint64(data[0:8], computedChecksum)
+
+	// Write the buffer to the device
+	if err := device.WriteBlock(addr, data); err != nil {
+		return fmt.Errorf("failed to write B-tree node at address %d: %w", addr, err)
+	}
+
+	return nil
+}
+
 // ValidateBTreeNodePhys performs basic validation on the BTNodePhys structure.
 func ValidateBTreeNodePhys(node *types.BTNodePhys) error {
 	if node.NKeys == 0 {
@@ -189,122 +246,166 @@ func SearchBTreeNodePhys(node *types.BTNodePhys, searchKey []byte, keyCompare fu
 	return left, false, nil
 }
 
-// InitializeEmptyNode sets up a new empty node with properly initialized areas
-func InitializeEmptyNode(node *types.BTNodePhys, isLeaf bool) {
-	// Initialize the Data slice if it's nil
-	if node.Data == nil {
-		// Use a reasonable default size if not specified
-		node.Data = make([]byte, 512)
+// InitializeEmptyNode sets up a new empty B-tree node with properly initialized layout.
+// It allocates the node's data buffer to match the device's block size for compatibility with APFS.
+// If the node is a leaf, the leaf flag is applied. Root/non-root and level can be set later.
+func InitializeEmptyNode(node *types.BTNodePhys, isLeaf bool, blockSize int) {
+	if blockSize < BTNodePhysSize {
+		blockSize = 4096 // Fallback to standard APFS minimum block size
 	}
 
-	dataSize := len(node.Data)
+	node.Data = make([]byte, blockSize-BTNodePhysSize)
 
-	// Set up node properties
+	// Set flags
+	node.Flags = 0
 	if isLeaf {
-		node.Flags = types.BTNodeLeaf
+		node.Flags |= types.BTNodeLeaf
 	}
+
+	// Common fields
 	node.Level = 0
 	node.NKeys = 0
 
-	// Set up table space at the beginning
-	tocSize := 64 // Initial space for table of contents
+	// Table of contents (KVLoc table) goes at the start of node.Data
 	node.TableSpace.Off = 0
 	node.TableSpace.Len = 0
 
-	// Key area starts after table space
-	keyAreaStart := tocSize
+	// Free space starts immediately after the initial TOC area
+	tocStart := int(node.TableSpace.Off)
+	keyAreaStart := tocStart + 0 // Initially 0-length TOC
 
-	// Value area starts at the end
-	valueAreaStart := dataSize
+	// Value area starts at the end of Data and grows backwards
+	valueAreaEnd := len(node.Data)
 
-	// Free space is between key area and value area
+	// Free space is everything between key area and value area
 	node.FreeSpace.Off = uint16(keyAreaStart)
-	node.FreeSpace.Len = uint16(valueAreaStart - keyAreaStart)
+	node.FreeSpace.Len = uint16(valueAreaEnd - keyAreaStart)
 
-	// Initialize free lists as empty
+	// Free lists start empty
 	node.KeyFreeList.Off = BTOFFInvalid
 	node.KeyFreeList.Len = 0
 	node.ValFreeList.Off = BTOFFInvalid
 	node.ValFreeList.Len = 0
 }
 
-// InsertKeyValueLeaf inserts a key/value pair into a leaf node
+// InsertKeyValueLeaf inserts a key/value pair into a leaf node.
+// It updates the node's Table of Contents (TOC), stores the key/value data,
+// and adjusts the node's free space accordingly.
 func InsertKeyValueLeaf(node *types.BTNodePhys, key, value []byte) error {
 	if node == nil {
 		return fmt.Errorf("node is nil")
 	}
-
-	// Initialize the node if needed
-	if len(node.Data) == 0 {
-		node.Data = make([]byte, 512) // Default size for testing
-		node.Flags = types.BTNodeLeaf // Mark as leaf node
-		node.FreeSpace.Off = 64       // Table of contents starts at offset 0, keys start at 64
-		node.FreeSpace.Len = 448      // Most of the node is free space initially (512 - 64)
-	}
-
-	// Make sure node is a leaf
 	if !node.IsLeaf() {
 		return fmt.Errorf("insert only supported on leaf nodes")
 	}
+	if node.Data == nil {
+		return fmt.Errorf("node data buffer not initialized")
+	}
 
-	// Find insertion position to maintain sorted order
+	keyLen := len(key)
+	valLen := len(value)
+	requiredKey := keyLen
+	requiredVal := valLen
+
+	// Allocate key space
+	keyOff, newKeyFree, ok := allocateFromFreeList(node.Data, node.KeyFreeList, requiredKey)
+	if !ok {
+		keyOff = int(node.FreeSpace.Off)
+	}
+	node.KeyFreeList = newKeyFree
+
+	// Allocate value space
+	valOff, newValFree, ok := allocateFromFreeList(node.Data, node.ValFreeList, requiredVal)
+	if !ok {
+		valOff = int(node.FreeSpace.Off) + keyLen
+	}
+	node.ValFreeList = newValFree
+
+	// Update FreeSpace if we’re using it
+	end := valOff + valLen
+	if end > len(node.Data) {
+		return fmt.Errorf("not enough free space")
+	}
+	if valOff+valLen > int(node.FreeSpace.Off)+int(node.FreeSpace.Len) {
+		return fmt.Errorf("exceeds node FreeSpace")
+	}
+
+	// Find insert index for sorted order
 	insertIdx := 0
 	for i := 0; i < int(node.NKeys); i++ {
 		existingKey, err := GetKeyAtIndex(node, i)
 		if err != nil {
-			break // Can't read key, assume we insert at this position
+			break
 		}
 		if bytes.Compare(key, existingKey) > 0 {
-			insertIdx = i + 1 // Insert after this key
+			insertIdx = i + 1
 		} else {
 			break
 		}
 	}
 
-	// Simple offset calculation - in a production implementation, this would
-	// handle alignment and space management more robustly
-	keyOffset := int(node.FreeSpace.Off) // Keys go right after the table space
-	valueOffset := keyOffset + len(key)  // Values go right after keys for simplicity
-
-	// Create a new TOC entry
+	// Build TOC entry
 	tocEntry := make([]byte, KVLocSize)
-	binary.LittleEndian.PutUint16(tocEntry[0:2], uint16(keyOffset))
-	binary.LittleEndian.PutUint16(tocEntry[2:4], uint16(len(key)))
-	binary.LittleEndian.PutUint16(tocEntry[4:6], uint16(valueOffset))
-	binary.LittleEndian.PutUint16(tocEntry[6:8], uint16(len(value)))
+	binary.LittleEndian.PutUint16(tocEntry[0:2], uint16(keyOff))
+	binary.LittleEndian.PutUint16(tocEntry[2:4], uint16(keyLen))
+	binary.LittleEndian.PutUint16(tocEntry[4:6], uint16(valOff))
+	binary.LittleEndian.PutUint16(tocEntry[6:8], uint16(valLen))
 
-	// Make space for TOC entry
-	tocStart := int(node.TableSpace.Off)
-	tocInsertPos := tocStart + insertIdx*KVLocSize
+	tocInsertOffset := int(node.TableSpace.Off) + insertIdx*KVLocSize
+	endOfTOC := int(node.TableSpace.Off) + int(node.TableSpace.Len)
 
-	// Expand Data if needed
-	neededSize := max(valueOffset+len(value), tocInsertPos+KVLocSize)
-	if neededSize > len(node.Data) {
-		newData := make([]byte, neededSize)
-		copy(newData, node.Data)
-		node.Data = newData
+	if tocInsertOffset > endOfTOC || endOfTOC+KVLocSize > len(node.Data) {
+		return fmt.Errorf("TOC overflow")
 	}
 
-	// Shift existing TOC entries if inserting in the middle
+	// Shift TOC entries
 	if insertIdx < int(node.NKeys) {
-		copy(node.Data[tocInsertPos+KVLocSize:],
-			node.Data[tocInsertPos:tocStart+int(node.NKeys)*KVLocSize])
+		copy(node.Data[tocInsertOffset+KVLocSize:], node.Data[tocInsertOffset:endOfTOC])
 	}
+	copy(node.Data[tocInsertOffset:tocInsertOffset+KVLocSize], tocEntry)
 
-	// Insert the TOC entry
-	copy(node.Data[tocInsertPos:tocInsertPos+KVLocSize], tocEntry)
+	// Write key and value
+	copy(node.Data[keyOff:keyOff+keyLen], key)
+	copy(node.Data[valOff:valOff+valLen], value)
 
-	// Store the key and value
-	copy(node.Data[keyOffset:keyOffset+len(key)], key)
-	copy(node.Data[valueOffset:valueOffset+len(value)], value)
-
-	// Update node metadata
+	// Update metadata
 	node.NKeys++
-	node.TableSpace.Len += uint16(KVLocSize)
-	node.FreeSpace.Off = uint16(valueOffset + len(value)) // Update free space pointer
-	node.FreeSpace.Len -= uint16(len(key) + len(value) + KVLocSize)
+	node.TableSpace.Len += KVLocSize
+	node.FreeSpace.Off = uint16(end)
+	node.FreeSpace.Len = uint16(len(node.Data) - end)
 
 	return nil
+}
+
+func allocateFromFreeList(data []byte, head types.NLoc, length int) (offset int, updatedHead types.NLoc, ok bool) {
+	cur := int(head.Off)
+
+	for cur != int(BTOFFInvalid) && cur+8 <= len(data) {
+		entry := data[cur : cur+8] // Slice of the free_node
+
+		regionOffset := int(binary.LittleEndian.Uint16(entry[0:2]))
+		regionLen := int(binary.LittleEndian.Uint16(entry[2:4]))
+		next := int(binary.LittleEndian.Uint16(entry[4:6]))
+
+		if regionLen >= length {
+			remaining := regionLen - length
+
+			if remaining >= 8 {
+				// Shrink this entry in-place
+				newOffset := regionOffset + length
+				binary.LittleEndian.PutUint16(entry[0:2], uint16(newOffset))
+				binary.LittleEndian.PutUint16(entry[2:4], uint16(remaining))
+				return regionOffset, head, true
+			}
+
+			// Remove this entry from the list
+			return regionOffset, types.NLoc{Off: uint16(next), Len: 0}, true
+		}
+
+		cur = next
+	}
+
+	return 0, head, false
 }
 
 // DeleteKeyValue removes a key/value pair from a leaf node
@@ -322,23 +423,63 @@ func DeleteKeyValue(node *types.BTNodePhys, key []byte, compare func(a, b []byte
 		return fmt.Errorf("key not found for deletion")
 	}
 
-	// Calculate location in table of contents
-	tocStart := int(node.TableSpace.Off)
-	entryOffset := tocStart + index*KVLocSize
-
-	// Shift remaining entries in the table of contents
-	if index < int(node.NKeys)-1 {
-		copy(node.Data[entryOffset:], node.Data[entryOffset+KVLocSize:tocStart+int(node.TableSpace.Len)])
+	// Locate TOC entry
+	tocOffset := int(node.TableSpace.Off) + index*KVLocSize
+	if tocOffset+KVLocSize > len(node.Data) {
+		return fmt.Errorf("TOC entry out of bounds")
 	}
+
+	// Read key/value offsets and lengths from TOC
+	kvloc := &types.KVLoc{
+		K: types.NLoc{
+			Off: binary.LittleEndian.Uint16(node.Data[tocOffset:]),
+			Len: binary.LittleEndian.Uint16(node.Data[tocOffset+2:]),
+		},
+		V: types.NLoc{
+			Off: binary.LittleEndian.Uint16(node.Data[tocOffset+4:]),
+			Len: binary.LittleEndian.Uint16(node.Data[tocOffset+6:]),
+		},
+	}
+
+	// Push key and value into respective free lists
+	insertFreeNode(node.Data, &node.KeyFreeList, kvloc.K.Off, kvloc.K.Len)
+	insertFreeNode(node.Data, &node.ValFreeList, kvloc.V.Off, kvloc.V.Len)
+
+	// Shift TOC entries to remove this one
+	endOfTOC := int(node.TableSpace.Off) + int(node.TableSpace.Len)
+	if index < int(node.NKeys)-1 {
+		copy(node.Data[tocOffset:], node.Data[tocOffset+KVLocSize:endOfTOC])
+	}
+
+	// Zero out the trailing entry (optional cleanup)
+	copy(node.Data[endOfTOC-KVLocSize:endOfTOC], make([]byte, KVLocSize))
 
 	// Update metadata
 	node.NKeys--
-	node.TableSpace.Len -= uint16(KVLocSize)
-
-	// Note: We don't actually remove the key/value data - just the reference to it
-	// This is consistent with the APFS documentation where free space is managed through free lists
+	node.TableSpace.Len -= KVLocSize
 
 	return nil
+}
+
+func insertFreeNode(data []byte, list *types.NLoc, off, length uint16) {
+	// Find place to write the new free_node — use FreeSpace.Off
+	freeNodeOffset := int(list.Off)
+	if freeNodeOffset == int(BTOFFInvalid) || freeNodeOffset+8 > len(data) {
+		// Allocate from FreeSpace
+		freeNodeOffset = int(binary.LittleEndian.Uint16(data[44:46])) // node.FreeSpace.Off
+		if freeNodeOffset+8 > len(data) {
+			return // no room — ignore for now
+		}
+	}
+
+	// Write new free_node struct
+	binary.LittleEndian.PutUint16(data[freeNodeOffset:], off)
+	binary.LittleEndian.PutUint16(data[freeNodeOffset+2:], length)
+	binary.LittleEndian.PutUint16(data[freeNodeOffset+4:], list.Off) // next = old head
+	binary.LittleEndian.PutUint16(data[freeNodeOffset+6:], 0)        // padding
+
+	// Update head of list
+	list.Off = uint16(freeNodeOffset)
 }
 
 // TraverseBTree recursively traverses a B-tree and executes a callback for each leaf node encountered
@@ -370,4 +511,586 @@ func TraverseBTree(device types.BlockDevice, addr types.PAddr, callback func(nod
 	}
 
 	return nil
+}
+
+// LookupBTree finds a key in the B-tree, traversing from root to leaf.
+func LookupBTree(device types.BlockDevice, rootAddr types.PAddr, key []byte, keyCompare func(a, b []byte) int) ([]byte, bool, error) {
+	// Read the root node
+	node, err := ReadBTreeNodePhys(device, rootAddr)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to read root node: %w", err)
+	}
+
+	// If the node is a leaf, search it directly
+	if node.IsLeaf() {
+		idx, found, err := SearchBTreeNodePhys(node, key, keyCompare)
+		if err != nil {
+			return nil, false, err
+		}
+		if !found {
+			return nil, false, nil
+		}
+
+		// Get the value from the leaf node
+		value, err := GetValueAtIndex(node, idx)
+		if err != nil {
+			return nil, false, err
+		}
+		return value, true, nil
+	}
+
+	// For non-leaf nodes, find the appropriate child and recurse
+	// Perform a search to find the insertion point
+	idx, _, err := SearchBTreeNodePhys(node, key, keyCompare)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// If the key is greater than all keys in this node, we need the last child
+	if idx > 0 && idx >= int(node.NKeys) {
+		idx = int(node.NKeys) - 1
+	}
+
+	// Get the child node address from the value
+	value, err := GetValueAtIndex(node, idx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Child address is the first 8 bytes of the value in a non-leaf node
+	if len(value) < 8 {
+		return nil, false, fmt.Errorf("invalid child node reference: too short")
+	}
+	childAddr := types.PAddr(binary.LittleEndian.Uint64(value[:8]))
+
+	// Recursively search the child node
+	return LookupBTree(device, childAddr, key, keyCompare)
+}
+
+// SplitNode splits a B-tree node that has become full.
+// It returns the address of the new node, the new node itself, and the middle key.
+func SplitNode(device types.BlockDevice, nodeAddr types.PAddr, node *types.BTNodePhys, spaceman types.SpaceManager) (types.PAddr, *types.BTNodePhys, []byte, error) {
+	// Create a new node with the same level and flags
+	newNode := &types.BTNodePhys{
+		Flags: node.Flags,
+		Level: node.Level,
+		NKeys: 0,
+	}
+
+	// Allocate a new block using the space manager
+	newNodeAddr, err := spaceman.AllocateBlock()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to allocate block for new node: %w", err)
+	}
+
+	// Initialize the new node's storage
+	InitializeEmptyNode(newNode, node.IsLeaf(), int(device.GetBlockSize()))
+
+	// Find the middle key index
+	middleIdx := int(node.NKeys) / 2
+
+	// Get the middle key for returning to the parent
+	middleKey, err := GetKeyAtIndex(node, middleIdx)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to get middle key: %w", err)
+	}
+
+	// Copy the second half of keys/values to the new node
+	for i := middleIdx; i < int(node.NKeys); i++ {
+		key, err := GetKeyAtIndex(node, i)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("failed to get key at index %d: %w", i, err)
+		}
+
+		value, err := GetValueAtIndex(node, i)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("failed to get value at index %d: %w", i, err)
+		}
+
+		// Insert into new node
+		if err := InsertKeyValueLeaf(newNode, key, value); err != nil {
+			return 0, nil, nil, fmt.Errorf("failed to insert into new node: %w", err)
+		}
+	}
+
+	// Update the original node
+	// We need to reconstruct the original node with only the first half of keys
+	updatedNode := &types.BTNodePhys{
+		Flags: node.Flags,
+		Level: node.Level,
+		NKeys: 0,
+	}
+	InitializeEmptyNode(updatedNode, node.IsLeaf(), int(device.GetBlockSize()))
+
+	// Copy the first half of keys/values to the updated node
+	for i := 0; i < middleIdx; i++ {
+		key, err := GetKeyAtIndex(node, i)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("failed to get key at index %d: %w", i, err)
+		}
+
+		value, err := GetValueAtIndex(node, i)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("failed to get value at index %d: %w", i, err)
+		}
+
+		// Insert into updated node
+		if err := InsertKeyValueLeaf(updatedNode, key, value); err != nil {
+			return 0, nil, nil, fmt.Errorf("failed to insert into updated node: %w", err)
+		}
+	}
+
+	// Write both nodes to disk
+	if err := WriteBTreeNodePhys(device, nodeAddr, updatedNode); err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to write updated original node: %w", err)
+	}
+
+	if err := WriteBTreeNodePhys(device, newNodeAddr, newNode); err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to write new node: %w", err)
+	}
+
+	return newNodeAddr, newNode, middleKey, nil
+}
+
+// InsertBTree inserts a key-value pair into the B-tree, handling splits as needed.
+// It returns the address of the root node (which may change if the root splits).
+func InsertBTree(device types.BlockDevice, rootAddr types.PAddr, key, value []byte, keyCompare func(a, b []byte) int, spaceman types.SpaceManager) (types.PAddr, error) {
+	// Read the root node
+	rootNode, err := ReadBTreeNodePhys(device, rootAddr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read root node: %w", err)
+	}
+
+	// If root is a leaf, insert directly and handle potential split
+	if rootNode.IsLeaf() {
+		idx, found, err := SearchBTreeNodePhys(rootNode, key, keyCompare)
+		if err != nil {
+			return 0, fmt.Errorf("failed to search node: %w", err)
+		}
+
+		if found {
+			kvloc, err := GetKeyValueLocation(rootNode, idx)
+			if err != nil {
+				return 0, fmt.Errorf("failed to get kvloc: %w", err)
+			}
+
+			existingSize := int(kvloc.K.Len) + int(kvloc.V.Len)
+			newSize := len(key) + len(value)
+
+			if newSize <= existingSize {
+				keyOffset := int(kvloc.K.Off)
+				valOffset := int(kvloc.V.Off)
+				copy(rootNode.Data[keyOffset:keyOffset+len(key)], key)
+				copy(rootNode.Data[valOffset:valOffset+len(value)], value)
+
+				if len(key) != int(kvloc.K.Len) {
+					tocOffset := int(rootNode.TableSpace.Off) + idx*KVLocSize + 2
+					binary.LittleEndian.PutUint16(rootNode.Data[tocOffset:], uint16(len(key)))
+				}
+				if len(value) != int(kvloc.V.Len) {
+					tocOffset := int(rootNode.TableSpace.Off) + idx*KVLocSize + 6
+					binary.LittleEndian.PutUint16(rootNode.Data[tocOffset:], uint16(len(value)))
+				}
+			} else {
+				if err := DeleteKeyValue(rootNode, key, keyCompare); err != nil {
+					return 0, fmt.Errorf("delete before reinsert failed: %w", err)
+				}
+				if err := InsertKeyValueLeaf(rootNode, key, value); err != nil {
+					return 0, fmt.Errorf("reinsert failed: %w", err)
+				}
+			}
+		} else {
+			if err := InsertKeyValueLeaf(rootNode, key, value); err != nil {
+				return 0, fmt.Errorf("insert failed: %w", err)
+			}
+		}
+
+		estimatedSize := len(key) + len(value) + KVLocSize
+		pad := (KVAlignment - (estimatedSize % KVAlignment)) % KVAlignment
+		required := uint16(estimatedSize + pad + KVLocSize)
+
+		if rootNode.FreeSpace.Len < required {
+			newRightAddr, newRightNode, middleKey, err := SplitNode(device, rootAddr, rootNode, spaceman)
+			if err != nil {
+				return 0, fmt.Errorf("split failed: %w", err)
+			}
+
+			// Write the right node (post-split)
+			if err := WriteBTreeNodePhys(device, newRightAddr, newRightNode); err != nil {
+				return 0, fmt.Errorf("write right node failed: %w", err)
+			}
+
+			newRootNode := &types.BTNodePhys{}
+			InitializeEmptyNode(newRootNode, false, int(device.GetBlockSize()))
+			newRootNode.Level = rootNode.Level + 1
+			newRootNode.Flags = (rootNode.Flags & ^uint16(types.BTNodeLeaf)) | types.BTNodeRoot
+
+			newRootAddr, err := spaceman.AllocateBlock()
+			if err != nil {
+				return 0, fmt.Errorf("alloc new root failed: %w", err)
+			}
+
+			leftPtr := make([]byte, 8)
+			binary.LittleEndian.PutUint64(leftPtr, uint64(rootAddr))
+			if err := InsertKeyValueLeaf(newRootNode, middleKey, leftPtr); err != nil {
+				return 0, fmt.Errorf("insert left ptr failed: %w", err)
+			}
+
+			rightPtr := make([]byte, 8)
+			binary.LittleEndian.PutUint64(rightPtr, uint64(newRightAddr))
+			if err := InsertKeyValueLeaf(newRootNode, middleKey, rightPtr); err != nil {
+				return 0, fmt.Errorf("insert right ptr failed: %w", err)
+			}
+
+			if err := WriteBTreeNodePhys(device, newRootAddr, newRootNode); err != nil {
+				return 0, fmt.Errorf("write new root failed: %w", err)
+			}
+
+			return newRootAddr, nil
+		}
+
+		if err := WriteBTreeNodePhys(device, rootAddr, rootNode); err != nil {
+			return 0, fmt.Errorf("write updated root failed: %w", err)
+		}
+		return rootAddr, nil
+	}
+
+	// Non-leaf path
+	idx, exact, err := SearchBTreeNodePhys(rootNode, key, keyCompare)
+	if err != nil {
+		return 0, fmt.Errorf("search failed: %w", err)
+	}
+
+	childIdx := idx
+	if exact && childIdx < int(rootNode.NKeys)-1 {
+		childIdx++
+	}
+	if childIdx >= int(rootNode.NKeys) {
+		childIdx = int(rootNode.NKeys) - 1
+	}
+
+	childVal, err := GetValueAtIndex(rootNode, childIdx)
+	if err != nil {
+		return 0, fmt.Errorf("get child ptr failed: %w", err)
+	}
+	if len(childVal) < 8 {
+		return 0, fmt.Errorf("child ptr too short")
+	}
+	childAddr := types.PAddr(binary.LittleEndian.Uint64(childVal[:8]))
+
+	newChildAddr, err := InsertBTree(device, childAddr, key, value, keyCompare, spaceman)
+	if err != nil {
+		return 0, fmt.Errorf("recursive insert failed: %w", err)
+	}
+
+	if newChildAddr != childAddr {
+		newChildVal := make([]byte, 8)
+		binary.LittleEndian.PutUint64(newChildVal, uint64(newChildAddr))
+
+		keyAtIdx, err := GetKeyAtIndex(rootNode, childIdx)
+		if err != nil {
+			return 0, fmt.Errorf("get key for update failed: %w", err)
+		}
+
+		if err := DeleteKeyValue(rootNode, keyAtIdx, keyCompare); err != nil {
+			return 0, fmt.Errorf("delete child ref failed: %w", err)
+		}
+		if err := InsertKeyValueLeaf(rootNode, keyAtIdx, newChildVal); err != nil {
+			return 0, fmt.Errorf("insert child ref failed: %w", err)
+		}
+
+		estimatedSize := len(keyAtIdx) + 8 + KVLocSize
+		pad := (KVAlignment - (estimatedSize % KVAlignment)) % KVAlignment
+		required := uint16(estimatedSize + pad + KVLocSize)
+
+		if rootNode.FreeSpace.Len < required {
+			newRightAddr, newRightNode, middleKey, err := SplitNode(device, rootAddr, rootNode, spaceman)
+			if err != nil {
+				return 0, fmt.Errorf("split non-leaf failed: %w", err)
+			}
+
+			if err := WriteBTreeNodePhys(device, newRightAddr, newRightNode); err != nil {
+				return 0, fmt.Errorf("write split non-leaf failed: %w", err)
+			}
+
+			newRootNode := &types.BTNodePhys{}
+			InitializeEmptyNode(newRootNode, false, int(device.GetBlockSize()))
+			newRootNode.Level = rootNode.Level + 1
+			newRootNode.Flags = (rootNode.Flags & ^uint16(types.BTNodeLeaf)) | types.BTNodeRoot
+
+			newRootAddr, err := spaceman.AllocateBlock()
+			if err != nil {
+				return 0, fmt.Errorf("alloc new root failed: %w", err)
+			}
+
+			leftPtr := make([]byte, 8)
+			binary.LittleEndian.PutUint64(leftPtr, uint64(rootAddr))
+
+			rightPtr := make([]byte, 8)
+			binary.LittleEndian.PutUint64(rightPtr, uint64(newRightAddr))
+
+			if err := InsertKeyValueLeaf(newRootNode, middleKey, leftPtr); err != nil {
+				return 0, fmt.Errorf("insert left in new root failed: %w", err)
+			}
+			if err := InsertKeyValueLeaf(newRootNode, middleKey, rightPtr); err != nil {
+				return 0, fmt.Errorf("insert right in new root failed: %w", err)
+			}
+
+			if err := WriteBTreeNodePhys(device, newRootAddr, newRootNode); err != nil {
+				return 0, fmt.Errorf("write new root failed: %w", err)
+			}
+
+			return newRootAddr, nil
+		}
+
+		if err := WriteBTreeNodePhys(device, rootAddr, rootNode); err != nil {
+			return 0, fmt.Errorf("write root after child update failed: %w", err)
+		}
+	}
+
+	return rootAddr, nil
+}
+
+// DeleteBTree removes a key-value pair from the B-tree.
+func DeleteBTree(device types.BlockDevice, rootAddr types.PAddr, key []byte, keyCompare func(a, b []byte) int, spaceman types.SpaceManager) (types.PAddr, error) {
+	// Read the root node
+	rootNode, err := ReadBTreeNodePhys(device, rootAddr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read root node: %w", err)
+	}
+
+	// If root is a leaf, delete directly
+	if rootNode.IsLeaf() {
+		// Check if the key exists
+		_, found, err := SearchBTreeNodePhys(rootNode, key, keyCompare)
+		if err != nil {
+			return 0, err
+		}
+
+		if !found {
+			return rootAddr, nil // Key not found, nothing to delete
+		}
+
+		// Delete the key
+		if err := DeleteKeyValue(rootNode, key, keyCompare); err != nil {
+			return 0, err
+		}
+
+		// Write the updated root
+		if err := WriteBTreeNodePhys(device, rootAddr, rootNode); err != nil {
+			return 0, err
+		}
+
+		return rootAddr, nil
+	}
+
+	// Non-leaf node: find the right child to delete from
+	idx, _, err := SearchBTreeNodePhys(rootNode, key, keyCompare)
+	if err != nil {
+		return 0, err
+	}
+
+	// If the index is beyond the end of the array, use the last child
+	if idx >= int(rootNode.NKeys) {
+		idx = int(rootNode.NKeys) - 1
+	}
+
+	// Get the child node address
+	childVal, err := GetValueAtIndex(rootNode, idx)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(childVal) < 8 {
+		return 0, fmt.Errorf("invalid child pointer value")
+	}
+
+	childAddr := types.PAddr(binary.LittleEndian.Uint64(childVal[:8]))
+
+	// Recursively delete from the child
+	newChildAddr, err := DeleteBTree(device, childAddr, key, keyCompare, spaceman)
+	if err != nil {
+		return 0, err
+	}
+
+	// Check if the child was modified
+	if newChildAddr != childAddr {
+		// Check if the child was removed completely
+		if newChildAddr == 0 {
+			// Remove this key from the parent if it has other children
+			if rootNode.NKeys > 1 {
+				keyAtIdx, err := GetKeyAtIndex(rootNode, idx)
+				if err != nil {
+					return 0, err
+				}
+
+				if err := DeleteKeyValue(rootNode, keyAtIdx, keyCompare); err != nil {
+					return 0, err
+				}
+
+				// Write the updated node
+				if err := WriteBTreeNodePhys(device, rootAddr, rootNode); err != nil {
+					return 0, err
+				}
+			} else {
+				// This node has no children left, so remove it too
+				if err := spaceman.FreeBlock(rootAddr); err != nil {
+					return 0, fmt.Errorf("failed to free block for empty node: %w", err)
+				}
+				return 0, nil
+			}
+		} else {
+			// Update the pointer in the parent
+			newChildVal := make([]byte, 8)
+			binary.LittleEndian.PutUint64(newChildVal, uint64(newChildAddr))
+
+			keyAtIdx, err := GetKeyAtIndex(rootNode, idx)
+			if err != nil {
+				return 0, err
+			}
+
+			// Remove the old entry
+			if err := DeleteKeyValue(rootNode, keyAtIdx, keyCompare); err != nil {
+				return 0, err
+			}
+
+			// Add the new entry with updated pointer
+			if err := InsertKeyValueLeaf(rootNode, keyAtIdx, newChildVal); err != nil {
+				return 0, err
+			}
+
+			// Write the updated node
+			if err := WriteBTreeNodePhys(device, rootAddr, rootNode); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	// Check if the root now has only one child and is not a leaf
+	if !rootNode.IsLeaf() && rootNode.NKeys == 1 {
+		// Get the single child
+		childVal, err := GetValueAtIndex(rootNode, 0)
+		if err != nil {
+			return 0, err
+		}
+
+		if len(childVal) < 8 {
+			return 0, fmt.Errorf("invalid child pointer value")
+		}
+
+		childAddr := types.PAddr(binary.LittleEndian.Uint64(childVal[:8]))
+
+		// Free the old root
+		if err := spaceman.FreeBlock(rootAddr); err != nil {
+			return 0, fmt.Errorf("failed to free old root block: %w", err)
+		}
+
+		// The child becomes the new root
+		return childAddr, nil
+	}
+
+	return rootAddr, nil
+}
+
+// RangeBTree finds all key-value pairs within a specified range.
+func RangeBTree(device types.BlockDevice, rootAddr types.PAddr, startKey, endKey []byte, keyCompare func(a, b []byte) int) ([][2][]byte, error) {
+	results := make([][2][]byte, 0)
+
+	// Function to collect matching entries from leaf nodes
+	collectEntries := func(node *types.BTNodePhys) error {
+		if !node.IsLeaf() {
+			return nil // Skip non-leaf nodes
+		}
+
+		for i := 0; i < int(node.NKeys); i++ {
+			key, err := GetKeyAtIndex(node, i)
+			if err != nil {
+				return err
+			}
+
+			// Check if key is in range
+			if (startKey == nil || keyCompare(key, startKey) >= 0) &&
+				(endKey == nil || keyCompare(key, endKey) <= 0) {
+				value, err := GetValueAtIndex(node, i)
+				if err != nil {
+					return err
+				}
+
+				// Add to results
+				results = append(results, [2][]byte{key, value})
+			}
+		}
+		return nil
+	}
+
+	// Define a recursive function to traverse the tree
+	var traverse func(addr types.PAddr) error
+	traverse = func(addr types.PAddr) error {
+		node, err := ReadBTreeNodePhys(device, addr)
+		if err != nil {
+			return fmt.Errorf("failed to read node at address %d: %w", addr, err)
+		}
+
+		if node.IsLeaf() {
+			return collectEntries(node)
+		}
+
+		// For non-leaf nodes, determine which children to traverse
+		for i := 0; i < int(node.NKeys); i++ {
+			// Get the child node address
+			childVal, err := GetValueAtIndex(node, i)
+			if err != nil {
+				return err
+			}
+
+			if len(childVal) < 8 {
+				return fmt.Errorf("invalid child pointer value at index %d", i)
+			}
+
+			childAddr := types.PAddr(binary.LittleEndian.Uint64(childVal[:8]))
+
+			// Determine if this child might contain keys in our range
+			shouldTraverse := true
+
+			if i < int(node.NKeys)-1 && startKey != nil {
+				// Check if all keys in this subtree are less than startKey
+				nextKey, err := GetKeyAtIndex(node, i+1)
+				if err != nil {
+					return err
+				}
+
+				if keyCompare(nextKey, startKey) <= 0 {
+					shouldTraverse = false // Skip this child
+				}
+			}
+
+			if i > 0 && endKey != nil {
+				// Check if all keys in this subtree are greater than endKey
+				prevKey, err := GetKeyAtIndex(node, i)
+				if err != nil {
+					return err
+				}
+
+				if keyCompare(prevKey, endKey) > 0 {
+					shouldTraverse = false // Skip this child
+				}
+			}
+
+			if shouldTraverse {
+				// Recursively traverse the child
+				if err := traverse(childAddr); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	}
+
+	// Start the traversal
+	if err := traverse(rootAddr); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
