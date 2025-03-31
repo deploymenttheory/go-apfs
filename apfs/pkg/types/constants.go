@@ -452,38 +452,6 @@ const (
 	MinDocID           uint32 = 3
 )
 
-// Crypto constants
-const (
-	CryptoSWID             uint64 = 4
-	CryptoReserved5        uint64 = 5
-	ApfsUnassignedCryptoID uint64 = ^uint64(0) // ~0ULL
-	CPMaxWrappedKeySize    uint16 = 128
-)
-
-// Protection classes
-const (
-	ProtectionClassDirNone uint32 = 0
-	ProtectionClassA       uint32 = 1
-	ProtectionClassB       uint32 = 2
-	ProtectionClassC       uint32 = 3
-	ProtectionClassD       uint32 = 4
-	ProtectionClassF       uint32 = 6
-	ProtectionClassM       uint32 = 14
-	CPEffectiveClassMask   uint32 = 0x0000001F
-)
-
-// Keybag tags
-const (
-	KBTagUnknown              uint16 = 0
-	KBTagReserved1            uint16 = 1
-	KBTagVolumeKey            uint16 = 2
-	KBTagVolumeUnlockRecords  uint16 = 3
-	KBTagVolumePassphraseHint uint16 = 4
-	KBTagWrappingMKey         uint16 = 5
-	KBTagVolumeMKey           uint16 = 6
-	KBTagReservedF8           uint16 = 0xF8
-)
-
 // Snapshot metadata flags
 const (
 	SnapMetaPendingDataless uint32 = 0x00000001
@@ -565,30 +533,6 @@ const (
 	FusionTier2DeviceByteAddr uint64 = 0x4000000000000000
 )
 
-// Encryption rolling flags
-const (
-	ERSBFlagEncrypting       uint64 = 0x0000000000000001
-	ERSBFlagDecrypting       uint64 = 0x0000000000000002
-	ERSBFlagKeyrolling       uint64 = 0x0000000000000004
-	ERSBFlagPaused           uint64 = 0x0000000000000008
-	ERSBFlagFailed           uint64 = 0x0000000000000010
-	ERSBFlagCidIsTweak       uint64 = 0x0000000000000020
-	ERSBFlagFree1            uint64 = 0x0000000000000040
-	ERSBFlagFree2            uint64 = 0x0000000000000080
-	ERSBFlagCMBlockSizeMask  uint64 = 0x0000000000000F00
-	ERSBFlagCMBlockSizeShift        = 8
-	ERSBFlagERPhaseMask      uint64 = 0x0000000000003000
-	ERSBFlagERPhaseShift            = 12
-	ERSBFlagFromOnekey       uint64 = 0x0000000000004000
-)
-
-// Encryption rolling phases
-const (
-	ERPhaseOmapRoll uint32 = 1
-	ERPhaseDataRoll uint32 = 2
-	ERPhaseSnapRoll uint32 = 3
-)
-
 // APFS GPT partition UUID
 const (
 	APFSGPTPartitionUUID          string = "7C3457EF-0000-11AA-AA11-00306543ECAC"
@@ -649,4 +593,72 @@ const (
 	JDrecLenMask   uint32 = 0x000003FF // Lower 10 bits: name length
 	JDrecHashMask  uint32 = 0xFFFFFC00 // Upper 22 bits: name hash
 	JDrecHashShift uint32 = 10         // Hash is shifted by 10 bits
+)
+
+// -------------------------------------------------------------------
+// Constants for j_key_t.j_oid (64-bit packed object ID and type)
+// Reference: Apple File System Reference — j_key_t / j_inode_key_t (page ~73)
+// -------------------------------------------------------------------
+
+// Crypto Constants
+const (
+	// Crypto State Identifiers
+	CryptoSWID             uint64 = 4
+	CryptoReserved5        uint64 = 5
+	ApfsUnassignedCryptoID uint64 = ^uint64(0) // ~0ULL
+
+	// Key Wrapping and Encryption
+	CPMaxWrappedKeySize uint16 = 128
+	MaxKeyLength        uint16 = 128
+
+	// Encryption Rolling Magic Number
+	ERVersion uint32 = 1
+)
+
+// Encryption Rolling Phases
+const (
+	ERPhaseOmapRoll uint32 = 1
+	ERPhaseDataRoll uint32 = 2
+	ERPhaseSnapRoll uint32 = 3
+)
+
+// Encryption Rolling Flags
+const (
+	ERSBFlagEncrypting       uint64 = 0x0000000000000001
+	ERSBFlagDecrypting       uint64 = 0x0000000000000002
+	ERSBFlagKeyrolling       uint64 = 0x0000000000000004
+	ERSBFlagPaused           uint64 = 0x0000000000000008
+	ERSBFlagFailed           uint64 = 0x0000000000000010
+	ERSBFlagCidIsTweak       uint64 = 0x0000000000000020
+	ERSBFlagFree1            uint64 = 0x0000000000000040
+	ERSBFlagFree2            uint64 = 0x0000000000000080
+	ERSBFlagCMBlockSizeMask  uint64 = 0x0000000000000F00
+	ERSBFlagCMBlockSizeShift        = 8
+	ERSBFlagERPhaseMask      uint64 = 0x0000000000003000
+	ERSBFlagERPhaseShift            = 12
+	ERSBFlagFromOnekey       uint64 = 0x0000000000004000
+)
+
+// Keybag Entry Tags
+const (
+	KBTagUnknown              uint16 = 0
+	KBTagReserved1            uint16 = 1
+	KBTagVolumeKey            uint16 = 2
+	KBTagVolumeUnlockRecords  uint16 = 3
+	KBTagVolumePassphraseHint uint16 = 4
+	KBTagWrappingMKey         uint16 = 5
+	KBTagVolumeMKey           uint16 = 6
+	KBTagReservedF8           uint16 = 0xF8
+)
+
+// Protection Classes
+const (
+	ProtectionClassDirNone uint32 = 0
+	ProtectionClassA       uint32 = 1 // Complete protection
+	ProtectionClassB       uint32 = 2 // Protected unless open
+	ProtectionClassC       uint32 = 3 // Protected until first user authentication
+	ProtectionClassD       uint32 = 4 // No protection
+	ProtectionClassF       uint32 = 6 // No protection with nonpersistent key
+	ProtectionClassM       uint32 = 14
+	CPEffectiveClassMask   uint32 = 0x0000001F
 )

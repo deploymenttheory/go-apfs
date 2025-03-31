@@ -92,6 +92,63 @@ func ReadNXSuperblock(device types.BlockDevice, addr types.PAddr) (*types.NXSupe
 	return &sb, nil
 }
 
+// WriteVolumeSuperblock writes a volume superblock to disk
+func WriteVolumeSuperblock(device types.BlockDevice, volume *types.APFSSuperblock) error {
+	// Serialize the volume superblock
+	data, err := serializeAPFSSuperblock(volume)
+	if err != nil {
+		return err
+	}
+
+	// Write to the volume's superblock address
+	// Assuming this is stored in the volume structure or is a known location
+	return device.WriteBlock(types.PAddr(volume.BlockNum), data)
+}
+
+// serializeAPFSSuperblock serializes an APFSSuperblock to binary data
+func serializeAPFSSuperblock(volume *types.APFSSuperblock) ([]byte, error) {
+	// Implementation similar to serializeERStatePhys
+	// This would serialize all fields of the APFSSuperblock structure
+
+	// For brevity, this is a simplified implementation
+	// In a real implementation, you would serialize all fields
+
+	// Calculate the size based on APFSSuperblock structure
+	dataSize := 1024 // Example size, actual size depends on the structure
+
+	data := make([]byte, dataSize)
+	r := binary.LittleEndian
+
+	// Write header (leave checksum as 0 for now)
+	offset := 8 // Skip checksum
+	r.PutUint64(data[offset:], uint64(volume.Header.OID))
+	offset += 8
+	r.PutUint64(data[offset:], uint64(volume.Header.XID))
+	offset += 8
+	r.PutUint32(data[offset:], volume.Header.Type)
+	offset += 4
+	r.PutUint32(data[offset:], volume.Header.Subtype)
+	offset += 4
+
+	// Write volume-specific fields
+	r.PutUint32(data[offset:], volume.Magic)
+	offset += 4
+
+	// ... Write all other fields ...
+
+	// Include the ERStateOID
+	r.PutUint64(data[offset:], uint64(volume.ERStateOID))
+	offset += 8
+
+	// ... Write remaining fields ...
+
+	// Calculate and set checksum
+	checksum := checksum.Fletcher64WithZeroedChecksum(data, 0)
+	r.PutUint64(data[0:8], checksum)
+
+	return data, nil
+}
+
 // ValidateNXSuperblock performs thorough validation checks on the superblock structure.
 func ValidateNXSuperblock(sb *types.NXSuperblock) error {
 	if sb.Magic != types.NXMagic {
