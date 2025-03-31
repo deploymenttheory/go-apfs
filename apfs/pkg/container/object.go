@@ -3,9 +3,11 @@
 package container
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"github.com/deploymenttheory/go-apfs/apfs/pkg/checksum"
 	"github.com/deploymenttheory/go-apfs/apfs/pkg/types"
@@ -126,4 +128,69 @@ func (os *ObjectStorage) ClearCache() {
 // CacheObject manually adds an object to the cache
 func (os *ObjectStorage) CacheObject(addr types.PAddr, data []byte) {
 	os.blockCache.Store(addr, data)
+}
+
+// SerializeObjectHeader serializes an ObjectHeader to binary data
+func SerializeObjectHeader(header *types.ObjectHeader) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	writer := types.NewBinaryWriter(buf, binary.LittleEndian)
+
+	if err := writer.Write(header.Cksum); err != nil {
+		return nil, fmt.Errorf("failed to write checksum: %w", err)
+	}
+
+	if err := writer.WriteOID(header.OID); err != nil {
+		return nil, fmt.Errorf("failed to write OID: %w", err)
+	}
+
+	if err := writer.WriteXID(header.XID); err != nil {
+		return nil, fmt.Errorf("failed to write XID: %w", err)
+	}
+
+	if err := writer.WriteUint32(header.Type); err != nil {
+		return nil, fmt.Errorf("failed to write type: %w", err)
+	}
+
+	if err := writer.WriteUint32(header.Subtype); err != nil {
+		return nil, fmt.Errorf("failed to write subtype: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DeserializeObjectHeader deserializes an ObjectHeader from binary data
+func DeserializeObjectHeader(data []byte) (*types.ObjectHeader, error) {
+	if len(data) < int(unsafe.Sizeof(types.ObjectHeader{})) {
+		return nil, types.ErrStructTooShort
+	}
+
+	reader := types.NewBinaryReader(bytes.NewReader(data), binary.LittleEndian)
+	header := &types.ObjectHeader{}
+
+	if err := reader.Read(&header.Cksum); err != nil {
+		return nil, fmt.Errorf("failed to read checksum: %w", err)
+	}
+
+	var err error
+	header.OID, err = reader.ReadOID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OID: %w", err)
+	}
+
+	header.XID, err = reader.ReadXID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read XID: %w", err)
+	}
+
+	header.Type, err = reader.ReadUint32()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read type: %w", err)
+	}
+
+	header.Subtype, err = reader.ReadUint32()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read subtype: %w", err)
+	}
+
+	return header, nil
 }
