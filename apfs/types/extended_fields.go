@@ -136,38 +136,38 @@ const InoExtTypeOrigSyncRootId uint8 = 16
 // Reference: page 113
 // When the file data changes, this extended field must be updated to match the new data.
 // If it's not possible to update the field, the field must be removed.
-const XfDataDependent uint16 = 0x0001
+const XfDataDependent uint8 = 0x01
 
 // XfDoNotCopy indicates when copying this file, omit this extended field from the copy.
 // Reference: page 113
-const XfDoNotCopy uint16 = 0x0002
+const XfDoNotCopy uint8 = 0x02
 
 // XfReserved4 is reserved.
 // Reference: page 113
 // Don't set this flag, but preserve it if it's already set.
-const XfReserved4 uint16 = 0x0004
+const XfReserved4 uint8 = 0x04
 
 // XfChildrenInherit indicates when creating a new entry in this directory,
 // copy this extended field to the new directory entry.
 // Reference: page 113
-const XfChildrenInherit uint16 = 0x0008
+const XfChildrenInherit uint8 = 0x08
 
 // XfUserField indicates this extended field was added by a user-space program.
 // Reference: page 113
-const XfUserField uint16 = 0x0010
+const XfUserField uint8 = 0x10
 
 // XfSystemField indicates this extended field was added by the kernel, by the implementation
 // of Apple File System, or by another system component.
 // Reference: page 113
 // Extended fields with this flag set can't be removed or modified by a program running in user space.
-const XfSystemField uint16 = 0x0020
+const XfSystemField uint8 = 0x20
 
 // XfReserved40 is reserved.
 // Reference: page 114
 // Don't set this flag, but preserve it if it's already set.
-const XfReserved40 uint16 = 0x0040
+const XfReserved40 uint8 = 0x40
 
 // XfReserved80 is reserved.
 // Reference: page 114
 // Don't set this flag, but preserve it if it's already set.
-const XfReserved80 uint16 = 0x0080
+const XfReserved80 uint8 = 0x80

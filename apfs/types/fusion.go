@@ -76,6 +76,7 @@ type FusionWbcListPhysT struct {
 	FwlpReserved uint32
 
 	// The entries in the write-back cache list.
+	// This is a Go slice representing the C flexible array member.
 	FwlpListEntries []FusionWbcListEntryT
 }
 

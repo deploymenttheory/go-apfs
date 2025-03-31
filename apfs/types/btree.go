@@ -50,8 +50,7 @@ type BtreeNodePhysT struct {
 	// The node's storage area. (page 125)
 	// This area contains the table of contents, keys, free space, and values.
 	// A root node also has as an instance of btree_info_t at the end of its storage area.
-	// This is a Go slice representing the C flexible array member.
-	BtnData []uint64
+	BtnData []byte
 }
 
 // BtreeInfoFixedT contains static information about a B-tree.

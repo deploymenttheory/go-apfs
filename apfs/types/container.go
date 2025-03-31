@@ -3,6 +3,12 @@ package types
 // Container (pages 26-43)
 // The container includes several top-level objects that are shared by all of the container's volumes.
 
+// NxMaxFileSystems is the maximum number of volumes that can be in a single container.
+// NxMaxFileSystems is a constant but cannot be used as the length of an array field
+// unless declared before the struct.
+// Reference: page 35
+const NxMaxFileSystems = 100
+
 // NxSuperblockT is a container superblock.
 // Reference: page 27
 type NxSuperblockT struct {
@@ -105,10 +111,6 @@ type NxSuperblockT struct {
 // which is an abbreviated form of NX superblock.
 // Reference: page 35
 const NxMagic uint32 = 'B' | 'S'<<8 | 'X'<<16 | 'N'<<24 // 'BSXN'
-
-// NxMaxFileSystems is the maximum number of volumes that can be in a single container.
-// Reference: page 35
-const NxMaxFileSystems = 100
 
 // NxEphInfoCount is the length of the array in the nx_ephemeral_info field.
 // Reference: page 35

@@ -340,7 +340,7 @@ const (
 
 	// ApfsTypeDirStats is information about a directory.
 	// Reference: page 86
-	// The key is an instance of j_dir_stats_key_t and the value is an instance of j_drec_val_t.
+	// The key is an instance of j_dir_stats_key_t and the value is an instance of j_dir_stats_val_t.
 	ApfsTypeDirStats JObjTypes = 10
 
 	// ApfsTypeSnapName is the name of a snapshot.

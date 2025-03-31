@@ -213,6 +213,6 @@ type JFileDataHashValT struct {
 	// in the im_hash_type field of integrity_meta_phys_t.
 	HashSize uint8
 
-	// The hash data. (page 158)
-	Hash []byte
+	// The hash data. APFS hash sizes are fixed per algorithm (e.g., 32, 48, 64 bytes). (page 158)
+	Hash [ApfsHashMaxSize]byte
 }
