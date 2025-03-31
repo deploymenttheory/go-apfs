@@ -3,7 +3,7 @@ package crypto
 
 import (
 	"crypto/aes"
-	"crypto/cipher"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -63,99 +63,133 @@ func DeriveKeyFromPassword(password string, salt []byte) ([]byte, error) {
 	return key, nil
 }
 
-// pbkdf2SHA256 implements PBKDF2 with HMAC-SHA256
-// This is a simplified implementation for demonstration
+// pbkdf2SHA256 derives a key from the given password and salt using PBKDF2-HMAC-SHA256.
+// It returns a key of length `keyLen` after `iterations` of derivation.
 func pbkdf2SHA256(password, salt []byte, iterations, keyLen int) []byte {
-	// In a real implementation, you would use the crypto/pbkdf2 package
-	// For demonstration purposes, we'll implement a simplified version
-
-	// Initialize the key with the salt
-	key := make([]byte, keyLen)
-	copy(key, salt)
-
-	// Hash the password with the salt multiple times
-	for i := 0; i < iterations; i++ {
-		h := sha256.New()
-		h.Write(key)
-		h.Write(password)
-		key = h.Sum(nil)[:keyLen]
-	}
-
-	return key
+	return pbkdf2.Key(password, salt, iterations, keyLen, sha256.New)
 }
 
-// WrapKey wraps a key using AES-256 key wrapping (RFC 3394)
-// This is a simplified implementation for demonstration
-func WrapKey(key, wrapperKey []byte) ([]byte, error) {
-	if len(key) == 0 {
-		return nil, errors.New("key cannot be empty")
+// WrapKey wraps a key using AES Key Wrap (RFC 3394).
+func WrapKey(key, kek []byte) ([]byte, error) {
+	if len(kek) != 16 && len(kek) != 24 && len(kek) != 32 {
+		return nil, errors.New("invalid KEK length (must be 16, 24, or 32 bytes)")
+	}
+	if len(key)%8 != 0 || len(key) == 0 {
+		return nil, errors.New("key to wrap must be a non-zero multiple of 8 bytes")
 	}
 
-	if len(wrapperKey) < 16 {
-		return nil, errors.New("wrapper key too short")
-	}
-
-	// In APFS, key wrapping is done according to RFC 3394
-	// For demonstration, we'll use AES-CBC with a known IV
-
-	// Create AES cipher
-	block, err := aes.NewCipher(wrapperKey)
+	block, err := aes.NewCipher(kek)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	// Add padding to ensure key is a multiple of AES block size
-	paddedKey := padPKCS7(key, aes.BlockSize)
-
-	// Generate a random IV
-	iv := make([]byte, aes.BlockSize)
-	if _, err := rand.Read(iv); err != nil {
-		return nil, fmt.Errorf("failed to generate IV: %w", err)
+	n := len(key) / 8
+	r := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		r[i] = make([]byte, 8)
+		copy(r[i], key[i*8:(i+1)*8])
 	}
 
-	// Encrypt with CBC mode
-	ciphertext := make([]byte, len(paddedKey))
-	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(ciphertext, paddedKey)
+	// Initial value: A = IV = 0xA6A6A6A6A6A6A6A6
+	a := []byte{0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6}
 
-	// Prepend IV to ciphertext
-	wrappedKey := append(iv, ciphertext...)
-	return wrappedKey, nil
+	// 6 rounds of encryption
+	for j := 0; j < 6; j++ {
+		for i := 0; i < n; i++ {
+			blockIn := append(a, r[i]...)
+			blockOut := make([]byte, 16)
+			block.Encrypt(blockOut, blockIn)
+
+			t := uint64(n*j + i + 1)
+			a = xor64(blockOut[:8], t)
+			copy(r[i], blockOut[8:])
+		}
+	}
+
+	// Output is A | R[0] | R[1] | ... | R[n-1]
+	result := append(a, make([]byte, 0, 8*n)...)
+	for _, ri := range r {
+		result = append(result, ri...)
+	}
+
+	return result, nil
 }
 
 // UnwrapKey unwraps a key using AES-256 key unwrapping (RFC 3394)
-// This is a simplified implementation for demonstration
-func UnwrapKey(wrappedKey, wrapperKey []byte) ([]byte, error) {
-	if len(wrappedKey) < aes.BlockSize*2 {
-		return nil, errors.New("wrapped key too short")
+func UnwrapKey(wrappedKey, kek []byte) ([]byte, error) {
+	if len(kek) != 16 && len(kek) != 24 && len(kek) != 32 {
+		return nil, errors.New("invalid KEK length (must be 16, 24, or 32 bytes)")
+	}
+	if len(wrappedKey) < 24 || len(wrappedKey)%8 != 0 {
+		return nil, errors.New("invalid wrapped key length (must be at least 24 bytes and multiple of 8)")
 	}
 
-	if len(wrapperKey) < 16 {
-		return nil, errors.New("wrapper key too short")
-	}
-
-	// Create AES cipher
-	block, err := aes.NewCipher(wrapperKey)
+	block, err := aes.NewCipher(kek)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	// Extract IV and ciphertext
-	iv := wrappedKey[:aes.BlockSize]
-	ciphertext := wrappedKey[aes.BlockSize:]
+	n := (len(wrappedKey) / 8) - 1
+	a := make([]byte, 8)
+	copy(a, wrappedKey[:8])
 
-	// Decrypt with CBC mode
-	paddedKey := make([]byte, len(ciphertext))
-	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(paddedKey, ciphertext)
-
-	// Remove padding
-	key, err := unpadPKCS7(paddedKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unpad key: %w", err)
+	r := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		r[i] = make([]byte, 8)
+		copy(r[i], wrappedKey[8+(i*8):8+(i+1)*8])
 	}
 
-	return key, nil
+	// 6 rounds of decryption
+	for j := 5; j >= 0; j-- {
+		for i := n - 1; i >= 0; i-- {
+			t := uint64(n*j + i + 1)
+			aXorT := xor64(a, t)
+			blockIn := append(aXorT, r[i]...)
+			blockOut := make([]byte, 16)
+			block.Decrypt(blockOut, blockIn)
+
+			copy(a, blockOut[:8])
+			copy(r[i], blockOut[8:])
+		}
+	}
+
+	// Check A against the RFC 3394 IV
+	expectedIV := []byte{0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6}
+	if !equalBytes(a, expectedIV) {
+		return nil, errors.New("unwrap failed: integrity check failed (IV mismatch)")
+	}
+
+	// Concatenate all R blocks to form the unwrapped key
+	unwrapped := make([]byte, 0, 8*n)
+	for _, ri := range r {
+		unwrapped = append(unwrapped, ri...)
+	}
+
+	return unwrapped, nil
+}
+
+// equalBytes compares two byte slices
+func equalBytes(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// xor64 takes an 8-byte block and XORs it with the integer t.
+func xor64(b []byte, t uint64) []byte {
+	tBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(tBytes, t)
+	out := make([]byte, 8)
+	for i := 0; i < 8; i++ {
+		out[i] = b[i] ^ tBytes[i]
+	}
+	return out
 }
 
 // GenerateRecoveryKey generates a random recovery key in the format used by APFS
