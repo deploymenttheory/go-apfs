@@ -7,19 +7,19 @@ import (
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
-type ObjectMapInspectorImpl struct {
+type ObjectMapInspector struct {
 	entries []interfaces.ObjectMapEntryReader
 }
 
-func NewObjectMapInspector(entries []interfaces.ObjectMapEntryReader) *ObjectMapInspectorImpl {
-	return &ObjectMapInspectorImpl{entries: entries}
+func NewObjectMapInspector(entries []interfaces.ObjectMapEntryReader) *ObjectMapInspector {
+	return &ObjectMapInspector{entries: entries}
 }
 
-func (i *ObjectMapInspectorImpl) ListObjects() ([]interfaces.ObjectMapEntryReader, error) {
+func (i *ObjectMapInspector) ListObjects() ([]interfaces.ObjectMapEntryReader, error) {
 	return i.entries, nil
 }
 
-func (i *ObjectMapInspectorImpl) FindObjectByID(objectID types.OidT, txID ...types.XidT) (interfaces.ObjectMapEntryReader, error) {
+func (i *ObjectMapInspector) FindObjectByID(objectID types.OidT, txID ...types.XidT) (interfaces.ObjectMapEntryReader, error) {
 	for _, entry := range i.entries {
 		if entry.ObjectID() != objectID {
 			continue
@@ -32,11 +32,11 @@ func (i *ObjectMapInspectorImpl) FindObjectByID(objectID types.OidT, txID ...typ
 	return nil, errors.New("object not found")
 }
 
-func (i *ObjectMapInspectorImpl) CountObjects() (int, error) {
+func (i *ObjectMapInspector) CountObjects() (int, error) {
 	return len(i.entries), nil
 }
 
-func (i *ObjectMapInspectorImpl) FindDeletedObjects() ([]interfaces.ObjectMapEntryReader, error) {
+func (i *ObjectMapInspector) FindDeletedObjects() ([]interfaces.ObjectMapEntryReader, error) {
 	var deleted []interfaces.ObjectMapEntryReader
 	for _, entry := range i.entries {
 		if entry.IsDeleted() {
@@ -46,7 +46,7 @@ func (i *ObjectMapInspectorImpl) FindDeletedObjects() ([]interfaces.ObjectMapEnt
 	return deleted, nil
 }
 
-func (i *ObjectMapInspectorImpl) FindEncryptedObjects() ([]interfaces.ObjectMapEntryReader, error) {
+func (i *ObjectMapInspector) FindEncryptedObjects() ([]interfaces.ObjectMapEntryReader, error) {
 	var encrypted []interfaces.ObjectMapEntryReader
 	for _, entry := range i.entries {
 		if entry.IsEncrypted() {
