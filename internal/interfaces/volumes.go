@@ -1,110 +1,190 @@
+// File: internal/interfaces/volumes.go
 package interfaces
 
 import (
+	"time"
+
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
-// VolumeReader defines operations for reading and interacting with an APFS volume
-type VolumeReader interface {
-	// Name returns the volume name as a string
-	Name() string
-
-	// IsEncrypted checks if the volume is encrypted
-	IsEncrypted() bool
-
-	// RoleName returns a human-readable name for the volume's role
-	RoleName() string
-
-	// HasFeature checks if a specific optional feature is enabled
-	HasFeature(flag uint64) bool
-
-	// HasIncompatibleFeature checks if a specific incompatibility flag is enabled
-	HasIncompatibleFeature(flag uint64) bool
-
-	// Superblock returns the underlying superblock
-	Superblock() *types.ApfsSuperblockT
-
-	// UUID returns the volume's unique identifier
+// VolumeIdentity provides core volume identification details
+type VolumeIdentity interface {
+	// Unique volume identifier
 	UUID() types.UUID
 
-	// Role returns the raw role value
+	// Volume name
+	Name() string
+
+	// Volume role identifier
 	Role() uint16
 
-	// Flags returns the volume's flags
-	Flags() uint64
+	// Human-readable role description
+	RoleName() string
+
+	// Index in container's filesystem array
+	Index() uint32
 }
 
-// VolumeInspector provides methods for volume discovery and inspection
-type VolumeInspector interface {
-	// ListVolumes returns all volumes
-	ListVolumes() ([]VolumeReader, error)
+// VolumeFeatures provides information about volume capabilities and flags
+type VolumeFeatures interface {
+	// Optional feature flags
+	Features() uint64
 
-	// FindVolumeByName finds a volume with a specific name
-	FindVolumeByName(name string) (VolumeReader, error)
+	// Read-only compatible feature flags
+	ReadonlyCompatibleFeatures() uint64
 
-	// FindVolumeByRole finds volumes with a specific role
-	FindVolumesByRole(role uint16) ([]VolumeReader, error)
+	// Incompatible feature flags
+	IncompatibleFeatures() uint64
 
-	// FindEncryptedVolumes returns all encrypted volumes
-	FindEncryptedVolumes() ([]VolumeReader, error)
+	// Specific feature checks
+	SupportsDefragmentation() bool
+	SupportsHardlinkMapRecords() bool
+	IsStrictAccessTimeEnabled() bool
+	IsCaseInsensitive() bool
+	IsNormalizationInsensitive() bool
+	IsSealed() bool
 
-	// FindVolumeByUUID finds a volume with a specific UUID
-	FindVolumeByUUID(uuid types.UUID) (VolumeReader, error)
+	// Specific flag checks
+	IsUnencrypted() bool
+	IsOneKeyEncryption() bool
+	IsSpilledOver() bool
+	RequiresSpilloverCleaner() bool
+	AlwaysChecksExtentReference() bool
 }
 
-// VolumeEncryptionInfo provides encryption-related volume information
-type VolumeEncryptionInfo interface {
-	// IsEncrypted checks if the volume is encrypted
+// VolumeSpaceManagement provides space allocation and quota information
+type VolumeSpaceManagement interface {
+	// Block allocation details
+	ReservedBlockCount() uint64
+	QuotaBlockCount() uint64
+	AllocatedBlockCount() uint64
+
+	// Allocation tracking
+	TotalBlocksAllocated() uint64
+	TotalBlocksFreed() uint64
+
+	// Space utilization
+	SpaceUtilization() float64
+}
+
+// VolumeTreeStructure provides object identifiers for key filesystem trees
+type VolumeTreeStructure interface {
+	// Root filesystem tree details
+	RootTreeOID() types.OidT
+	RootTreeType() uint32
+
+	// Extent reference tree details
+	ExtentReferenceTreeOID() types.OidT
+	ExtentReferenceTreeType() uint32
+
+	// Snapshot metadata tree details
+	SnapshotMetadataTreeOID() types.OidT
+	SnapshotMetadataTreeType() uint32
+
+	// Object map identifier
+	ObjectMapOID() types.OidT
+}
+
+// VolumeMetadata provides additional volume-level metadata
+type VolumeMetadata interface {
+	// Timestamp information
+	LastUnmountTime() time.Time
+	LastModifiedTime() time.Time
+
+	// Modification tracking
+	FormattedBy() types.ApfsModifiedByT
+	ModificationHistory() []types.ApfsModifiedByT
+
+	// Identifier tracking
+	NextObjectID() uint64
+	NextDocumentID() uint32
+}
+
+// VolumeEncryptionMetadata provides encryption-related volume information
+type VolumeEncryptionMetadata interface {
+	// Encryption state details
+	MetadataCryptoState() types.WrappedMetaCryptoStateT
+
+	// Encryption status checks
 	IsEncrypted() bool
-
-	// EncryptionType returns the type of encryption
-	EncryptionType() uint64
-
-	// KeybagLocation returns the location of the volume's keybag
-	KeybagLocation() types.Prange
+	HasEncryptionKeyRotated() bool
 }
 
-// VolumeSnapshotManager provides snapshot-related operations
-type VolumeSnapshotManager interface {
-	// ListSnapshots returns all snapshots for the volume
-	ListSnapshots() ([]SnapshotInfo, error)
-
-	// GetSnapshot retrieves a specific snapshot by transaction ID
-	GetSnapshot(xid types.XidT) (SnapshotInfo, error)
-}
-
-// SnapshotInfo represents metadata for a volume snapshot
-type SnapshotInfo struct {
-	// Transaction ID of the snapshot
-	XID types.XidT
-
-	// Creation time of the snapshot
-	CreateTime uint64
-
-	// Last modification time of the snapshot
-	ChangeTime uint64
-
-	// Name of the snapshot
-	Name string
-}
-
-// VolumeStatistics provides volume-level metrics
-type VolumeStatistics interface {
-	// TotalFiles returns the number of files in the volume
-	TotalFiles() uint64
-
-	// TotalDirectories returns the number of directories
-	TotalDirectories() uint64
-
-	// TotalSymlinks returns the number of symbolic links
-	TotalSymlinks() uint64
-
-	// TotalSnapshots returns the number of snapshots
+// VolumeSnapshotMetadata provides snapshot-related information
+type VolumeSnapshotMetadata interface {
+	// Snapshot details
 	TotalSnapshots() uint64
 
-	// AllocatedBlocks returns the total number of allocated blocks
-	TotalAllocatedBlocks() uint64
+	// Snapshot reversion information
+	RevertToSnapshotXID() types.XidT
+	RevertToSuperblockOID() types.OidT
 
-	// TotalBlocksFree returns the total number of free unallocated blocks
-	TotalBlocksFree() uint64
+	// Snapshot tree details
+	RootToSnapshotXID() types.XidT
+}
+
+// VolumeResourceCounts provides counts of filesystem objects
+type VolumeResourceCounts interface {
+	// Filesystem object counts
+	TotalFiles() uint64
+	TotalDirectories() uint64
+	TotalSymlinks() uint64
+	TotalOtherFileSystemObjects() uint64
+}
+
+// VolumeGroupInfo provides volume group information
+type VolumeGroupInfo interface {
+	// Volume group details
+	VolumeGroupID() types.UUID
+
+	// Metadata object identifiers
+	IntegrityMetadataOID() types.OidT
+}
+
+// VolumeIntegrityCheck provides methods for verifying volume integrity
+type VolumeIntegrityCheck interface {
+	// Magic number validation
+	ValidateMagicNumber() bool
+	MagicNumber() uint32
+}
+
+// VolumeEncryptionRollingState provides information about ongoing encryption changes
+type VolumeEncryptionRollingState interface {
+	// Encryption rolling state object identifier
+	EncryptionRollingStateOID() types.OidT
+
+	// Check if encryption rolling is in progress
+	IsEncryptionRollingInProgress() bool
+}
+
+// VolumeCloneInfo provides information about cloning operations
+type VolumeCloneInfo interface {
+	// Cloning information
+	CloneInfoIdEpoch() uint64
+	CloneInfoXID() uint64
+}
+
+// VolumeExtendedMetadata provides access to extended metadata details
+type VolumeExtendedMetadata interface {
+	// Extended metadata object identifiers
+	SnapshotMetadataExtOID() types.OidT
+	FileExtentTreeOID() types.OidT
+	FileExtentTreeType() uint32
+}
+
+// Comprehensive Volume Interface
+type Volume interface {
+	VolumeIdentity
+	VolumeFeatures
+	VolumeSpaceManagement
+	VolumeTreeStructure
+	VolumeMetadata
+	VolumeEncryptionMetadata
+	VolumeSnapshotMetadata
+	VolumeResourceCounts
+	VolumeGroupInfo
+	VolumeIntegrityCheck
+	VolumeEncryptionRollingState
+	VolumeCloneInfo
+	VolumeExtendedMetadata
 }

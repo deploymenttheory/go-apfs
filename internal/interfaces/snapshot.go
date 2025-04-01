@@ -1,3 +1,4 @@
+// File: internal/interfaces/snapshot.go
 package interfaces
 
 import (

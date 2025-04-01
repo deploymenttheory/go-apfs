@@ -1,3 +1,4 @@
+// File: internal/interfaces/encryption.go
 package interfaces
 
 import (

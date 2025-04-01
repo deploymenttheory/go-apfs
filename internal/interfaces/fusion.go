@@ -1,8 +1,26 @@
+// File: internal/interfaces/fusion.go
 package interfaces
 
 import (
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
+
+type FusionContainerManager interface {
+	// Check if Fusion Drive is supported at the container level
+	SupportsFusion() bool
+
+	// Get the Fusion Drive UUID
+	FusionUUID() types.UUID
+
+	// Get the Fusion Middle Tree Object ID
+	FusionMiddleTreeOID() types.OidT
+
+	// Get the Fusion Write-back Cache Object ID
+	FusionWriteBackCacheOID() types.OidT
+
+	// Get Fusion-specific container features or flags
+	FusionContainerFlags() uint64
+}
 
 // FusionWriteBackCacheReader provides methods for reading Fusion write-back cache information
 type FusionWriteBackCacheReader interface {

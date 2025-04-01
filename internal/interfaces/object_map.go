@@ -1,3 +1,4 @@
+// File: internal/interfaces/object_map.go
 package interfaces
 
 import (

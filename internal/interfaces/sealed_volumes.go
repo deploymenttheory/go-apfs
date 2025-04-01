@@ -1,3 +1,4 @@
+// File: internal/interfaces/sealed_volumes.go
 package interfaces
 
 import (

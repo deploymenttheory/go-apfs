@@ -1,3 +1,4 @@
+// File: internal/interfaces/space_manager.go
 package interfaces
 
 import (

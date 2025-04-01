@@ -1,0 +1,87 @@
+graph TD
+    %% Core foundation types with no dependencies
+    GeneralTypes["General Types<br>Paddr, Prange, UUID"] --> Objects
+    GeneralTypes --> Container
+    GeneralTypes --> BTree
+    GeneralTypes --> Volume
+    GeneralTypes --> SpaceManager
+    GeneralTypes --> FSObjects
+    GeneralTypes --> DataStreams
+    GeneralTypes --> SealedVolume
+    GeneralTypes --> Encryption
+    
+    %% Basic object structures
+    Objects["Core Objects<br>OidT, XidT, ObjPhysT"] --> Container
+    Objects --> BTree
+    Objects --> ObjectMap
+    Objects --> Reaper
+    Objects --> EFIJumpstart
+    Objects --> FusionDrive
+    Objects --> SpaceManager
+    Objects --> EncryptionRolling
+    
+    %% B-Tree structures
+    BTree["B-Tree<br>BtreeNodePhysT, BtreeInfoT<br>BtnIndexNodeValT, NlocT, etc."] --> FSObjects
+    
+    %% Object Map structures
+    ObjectMap["Object Maps<br>OmapPhysT, OmapKeyT, OmapValT"] --> FSObjects
+    
+    %% Container structures
+    Container["Container<br>NxSuperblockT, CheckpointMappingT<br>CheckpointMapPhysT"] --> Volume
+    
+    %% Space Manager structures
+    SpaceManager["Space Manager<br>SpacemanPhysT, ChunkInfoT<br>SpacemanFreeQueueT, etc."] --> Container
+    
+    %% Reaper structures
+    Reaper["Reaper<br>NxReaperPhysT, NxReapListPhysT<br>NxReapListEntryT"] --> Container
+    
+    %% EFI Jumpstart structures
+    EFIJumpstart["EFI Jumpstart<br>NxEfiJumpstartT"] --> Container
+    
+    %% Volume structures
+    Volume["Volume<br>ApfsSuperblockT, ApfsModifiedByT"] --> FSObjects
+    
+    %% Filesystem Objects structures
+    FSObjects["FileSystem Objects<br>JKeyT, JInodeValT, JDrecValT<br>JXattrValT, JObjTypes, etc."] --> DataStreams
+    FSObjects --> Snapshots
+    FSObjects --> Siblings
+    FSObjects --> ExtendedFields
+    
+    %% Data Streams structures
+    DataStreams["Data Streams<br>JPhysExtValT, JFileExtentValT<br>JDstreamT, JXattrDstreamT"] --> SealedVolume
+    
+    %% Extended Fields structures
+    ExtendedFields["Extended Fields<br>XfBlobT, XFieldT"] --> FSObjects
+    
+    %% Siblings (hard links) structures
+    Siblings["Siblings<br>JSiblingKeyT, JSiblingValT<br>JSiblingMapKeyT, JSiblingMapValT"] --> FSObjects
+    
+    %% Snapshots structures
+    Snapshots["Snapshots<br>JSnapMetadataKeyT, JSnapMetadataValT<br>JSnapNameKeyT, SnapMetaExtT"] --> FSObjects
+    
+    %% Sealed Volume structures
+    SealedVolume["Sealed Volumes<br>IntegrityMetaPhysT, FextTreeKeyT<br>FextTreeValT, JFileInfoKeyT, etc."] --> Volume
+    
+    %% Encryption structures
+    Encryption["Encryption<br>JCryptoKeyT, JCryptoValT<br>WrappedCryptoStateT, KbLockerT, etc."] --> Volume
+    Encryption --> FSObjects
+    
+    %% Encryption Rolling structures
+    EncryptionRolling["Encryption Rolling<br>ErStatePhysT, ErStatePhysV1T<br>ErRecoveryBlockPhysT, etc."] --> Volume
+    
+    %% Fusion Drive structures
+    FusionDrive["Fusion Drive<br>FusionWbcPhysT, FusionWbcListPhysT<br>FusionMtKeyT, FusionMtValT"] --> Container
+    
+    classDef foundation fill:#e0f7fa,stroke:#333,stroke-width:2px;
+    classDef coretypes fill:#e3f2fd,stroke:#333,stroke-width:1px;
+    classDef containertypes fill:#bbdefb,stroke:#333,stroke-width:1px;
+    classDef volumetypes fill:#c8e6c9,stroke:#333,stroke-width:1px;
+    classDef fstypes fill:#dcedc8,stroke:#333,stroke-width:1px;
+    classDef specialtypes fill:#fff9c4,stroke:#333,stroke-width:1px;
+    
+    class GeneralTypes,Objects foundation;
+    class BTree,ObjectMap,SpaceManager,Reaper,EFIJumpstart coretypes;
+    class Container,FusionDrive containertypes;
+    class Volume,EncryptionRolling,SealedVolume volumetypes;
+    class FSObjects,DataStreams,ExtendedFields,Siblings,Snapshots fstypes;
+    class Encryption specialtypes;

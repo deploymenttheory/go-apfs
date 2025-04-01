@@ -1,3 +1,4 @@
+// File: internal/interfaces/encryption_enrollment.go
 package interfaces
 
 import (

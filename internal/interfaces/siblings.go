@@ -1,3 +1,4 @@
+// File: internal/interfaces/siblings.go
 package interfaces
 
 // SiblingLinkReader provides information about a sibling link

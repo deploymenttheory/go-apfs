@@ -1,3 +1,4 @@
+// File: internal/interfaces/file_system_objects.go
 package interfaces
 
 import (

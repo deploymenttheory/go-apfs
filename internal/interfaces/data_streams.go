@@ -1,3 +1,4 @@
+// File: internal/interfaces/data_streams.go
 package interfaces
 
 // PhysicalExtentReader provides methods for reading information about physical extents

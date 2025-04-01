@@ -1,3 +1,4 @@
+// File: internal/interfaces/extended_fields.go
 package interfaces
 
 import (

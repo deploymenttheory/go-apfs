@@ -1,3 +1,4 @@
+// File: internal/interfaces/container.go
 package interfaces
 
 import (
@@ -202,21 +203,43 @@ type ContainerEphemeralManager interface {
 	EphemeralInfoVersion() uint32
 }
 
-// ContainerManager provides high-level methods for managing containers
+// ContainerManager provides high-level methods for managing APFS containers
 type ContainerManager interface {
-	// ListVolumes returns all volumes in the container
-	ListVolumes() ([]VolumeReader, error)
+	// Volume Discovery and Management
+	ListVolumes() ([]Volume, error)
+	FindVolumeByName(name string) (Volume, error)
+	FindVolumeByUUID(uuid types.UUID) (Volume, error)
+	FindVolumesByRole(role uint16) ([]Volume, error)
 
-	// GetTotalSize returns the total size of the container in bytes
-	GetTotalSize() uint64
+	// Container Space Management
+	TotalSize() uint64
+	FreeSpace() uint64
+	UsedSpace() uint64
+	SpaceUtilization() float64
 
-	// GetFreeSpace returns the free space in the container in bytes
-	GetFreeSpace() uint64
+	// Blocked and Reserved Space
+	BlockedOutRange() types.Prange
+	EvictMappingTreeOID() types.OidT
 
-	// GetBlockedOutRange returns the physical range of blocks where space will not be allocated
-	GetBlockedOutRange() types.Prange
+	// Container Metadata
+	UUID() types.UUID
+	NextObjectID() types.OidT
+	NextTransactionID() types.XidT
 
-	// GetEvictMappingTreeOID returns the physical object identifier of the tree used to track objects
-	// that must be moved out of blocked-out storage
-	GetEvictMappingTreeOID() types.OidT
+	// Features and Compatibility
+	Features() uint64
+	IncompatibleFeatures() uint64
+	ReadonlyCompatibleFeatures() uint64
+
+	// Encryption and Security
+	IsEncrypted() bool
+	CryptoType() uint64
+
+	// Snapshots and Versioning
+	TotalSnapshots() uint64
+	LatestSnapshotXID() types.XidT
+
+	// Health and Integrity
+	CheckIntegrity() (bool, []string)
+	IsHealthy() bool
 }

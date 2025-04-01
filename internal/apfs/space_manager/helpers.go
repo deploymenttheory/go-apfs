@@ -1,7 +1,7 @@
 package spacemanager
 
 import (
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // Manager wraps types.SpacemanPhysT to provide helper methods.

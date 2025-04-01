@@ -3,7 +3,7 @@ package siblings
 import (
 	"strings"
 
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // Sibling wraps types.JSiblingValT to provide helper methods.
