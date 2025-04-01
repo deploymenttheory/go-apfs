@@ -3,7 +3,7 @@ package efijumpstart
 import (
 	"unsafe"
 
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // Jumpstart wraps types.NxEfiJumpstartT to provide helper methods.

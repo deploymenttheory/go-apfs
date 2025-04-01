@@ -1,7 +1,7 @@
 package datastreams
 
 import (
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // PhysExtent wraps types.JPhysExtValT to provide local helper methods.

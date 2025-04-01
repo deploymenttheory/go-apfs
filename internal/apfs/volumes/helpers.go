@@ -3,7 +3,7 @@ package volumes
 import (
 	"strings"
 
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // Volume wraps types.ApfsSuperblockT to provide helper methods.

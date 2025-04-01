@@ -1,7 +1,7 @@
 package encryptionrolling
 
 import (
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // State wraps types.ErStatePhysT to provide local method definitions.

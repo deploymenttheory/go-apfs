@@ -1,75 +1,115 @@
-# Template
+# afps
 
-This repository serves as a **Default Template Repository** according official [GitHub Contributing Guidelines][ProjectSetup] for healthy contributions. It brings you clean default Templates for several areas:
+**afps** is a cross-platform, read-only command-line tool for exploring, extracting, recovering, and validating Apple File System (APFS) volumes — directly from raw disks, partitions, or `.dmg` images, without mounting or relying on macOS.
 
-- [Azure DevOps Pull Requests](.azuredevops/PULL_REQUEST_TEMPLATE.md) ([`.azuredevops\PULL_REQUEST_TEMPLATE.md`](`.azuredevops\PULL_REQUEST_TEMPLATE.md`))
-- [Azure Pipelines](.pipelines/pipeline.yml) ([`.pipelines/pipeline.yml`](`.pipelines/pipeline.yml`))
-- [GitHub Workflows](.github/workflows/)
-  - [Super Linter](.github/workflows/linter.yml) ([`.github/workflows/linter.yml`](`.github/workflows/linter.yml`))
-  - [Sample Workflows](.github/workflows/workflow.yml) ([`.github/workflows/workflow.yml`](`.github/workflows/workflow.yml`))
-- [GitHub Pull Requests](.github/PULL_REQUEST_TEMPLATE.md) ([`.github/PULL_REQUEST_TEMPLATE.md`](`.github/PULL_REQUEST_TEMPLATE.md`))
-- [GitHub Issues](.github/ISSUE_TEMPLATE/)
-  - [Feature Requests](.github/ISSUE_TEMPLATE/FEATURE_REQUEST.md) ([`.github/ISSUE_TEMPLATE/FEATURE_REQUEST.md`](`.github/ISSUE_TEMPLATE/FEATURE_REQUEST.md`))
-  - [Bug Reports](.github/ISSUE_TEMPLATE/BUG_REPORT.md) ([`.github/ISSUE_TEMPLATE/BUG_REPORT.md`](`.github/ISSUE_TEMPLATE/BUG_REPORT.md`))
-- [Codeowners](.github/CODEOWNERS) ([`.github/CODEOWNERS`](`.github/CODEOWNERS`)) _adjust usernames once cloned_
-- [Wiki and Documentation](docs/) ([`docs/`](`docs/`))
-- [gitignore](.gitignore) ([`.gitignore`](.gitignore))
-- [gitattributes](.gitattributes) ([`.gitattributes`](.gitattributes))
-- [Changelog](CHANGELOG.md) ([`CHANGELOG.md`](`CHANGELOG.md`))
-- [Code of Conduct](CODE_OF_CONDUCT.md) ([`CODE_OF_CONDUCT.md`](`CODE_OF_CONDUCT.md`))
-- [Contribution](CONTRIBUTING.md) ([`CONTRIBUTING.md`](`CONTRIBUTING.md`))
-- [License](LICENSE) ([`LICENSE`](`LICENSE`)) _adjust projectname once cloned_
-- [Readme](README.md) ([`README.md`](`README.md`))
-- [Security](SECURITY.md) ([`SECURITY.md`](`SECURITY.md`))
+---
 
+## Purpose
+
+APFS is a sophisticated filesystem with support for snapshots, encryption, crash-safe structures, and sparse containers. But outside macOS, there's little tooling to inspect or recover data from it. `afps` fills that gap by parsing APFS **on-disk structures directly**, without requiring kernel extensions, drivers, or mounted volumes.
+
+This makes it ideal for:
+
+- Data recovery engineers
+- Forensic analysts
+- Backup verification tools
+- Security auditing workflows
+- Developers analyzing `.dmg` payloads
+
+---
+
+## Key Features
+
+### General
+
+- 📦 Works with physical disks, partitions, and `.dmg` images
+- 🔍 Explore containers, volumes, snapshots, and files
+- 🗃️ Extract single files, directories, or full volumes
+- 🧯 Recover deleted files from unmounted APFS volumes
+- 🔐 Inspect encryption metadata and protection classes
+- ✅ Fully **read-only** and **cross-platform**
+- 🚫 Does **not mount** anything
+
+---
+
+### Volume and Container Inspection
+
+- Discover APFS containers and volumes
+- Show volume metadata, flags, block sizes, roles
+- Read checkpoints and recover historical states
+
+### File Extraction
+
+- Extract:
+  - A single file
+  - A directory (with optional recursion)
+  - An entire volume
+- Preserve metadata and extended attributes
+- Extract files from snapshots or specific checkpoints
+
+### Snapshot Management
+
+- List available snapshots in a volume
+- Extract contents of a snapshot
+- Compare snapshots (planned)
+
+### Deleted File Recovery
+
+- Recover deleted files via extent and inode scanning
+- Filter by filename, path, time, or type
+- Dump recovered files to `lost+found` structure
+
+### Filesystem Integrity Verification
+
+- Verify object checksums (Fletcher-64)
+- Detect corruption in containers, volumes, and trees
+- Validate free space bitmap and space manager
+
+### Encryption Metadata Inspection
+
+- Decode encryption state, keybags, and protection classes
+- Read encryption metadata from volumes or snapshots
+- Operates even if file contents are encrypted (read-only)
+
+### `.dmg` Support
+
+- Locate and extract APFS volumes from within `.dmg` files
+- Support for raw, sparse, and compressed images (planned)
+- All other operations (extract, inspect, recover) work the same on embedded volumes
+
+---
+
+## Example Usage
+
+```bash
+# Show info about all APFS volumes on a device
+afps list --device /dev/disk2
+
+# Extract a folder recursively
+afps extract --src /Users/alice/Documents --out ./backup --recursive
+
+# Recover deleted .jpg files from a volume
+afps recover --filter '*.jpg' --out ./lostfound
+
+# List snapshots and extract one
+afps list-snapshots --volume /dev/disk3s1
+afps extract --src / --snapshot Snap1 --out ./Snap1-root
+
+# Work with a .dmg image
+afps extract --from-dmg ./mac_backup.dmg --src /Library --out ./lib_dump
+```
+
+Why No Mounting?
+Unlike tools like mount, hdiutil, or fuse-apfs, afps does not mount the filesystem. Instead, it reads the disk structures directly:
+
+Parses superblocks, B-trees, and extent trees in user space
+
+Avoids kernel drivers, FUSE, or macOS-only APIs
+
+Prevents any chance of modification or write-back
+
+Enables full support for Linux and Windows
 
 ## Status
 
-[![Super Linter](<https://github.com/segraef/Template/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/linter.yml>)
-
-[![Sample Workflow](<https://github.com/segraef/Template/actions/workflows/workflow.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/workflow.yml>)
-
-## Creating a repository from a template
-
-You can [generate](https://github.com/segraef/Template/generate) a new repository with the same directory structure and files as an existing repository. More details can be found [here][CreateFromTemplate].
-
-## Reporting Issues and Feedback
-
-### Issues and Bugs
-
-If you find any bugs, please file an issue in the [GitHub Issues][GitHubIssues] page. Please fill out the provided template with the appropriate information.
-
-If you are taking the time to mention a problem, even a seemingly minor one, it is greatly appreciated, and a totally valid contribution to this project. **Thank you!**
-
-## Feedback
-
-If there is a feature you would like to see in here, please file an issue or feature request in the [GitHub Issues][GitHubIssues] page to provide direct feedback.
-
-## Contribution
-
-If you would like to become an active contributor to this repository or project, please follow the instructions provided in [`CONTRIBUTING.md`][Contributing].
-
-## Learn More
-
-* [GitHub Documentation][GitHubDocs]
-* [Azure DevOps Documentation][AzureDevOpsDocs]
-* [Microsoft Azure Documentation][MicrosoftAzureDocs]
-
-<!-- References -->
-
-<!-- Local -->
-[ProjectSetup]: <https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions>
-[CreateFromTemplate]: <https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/creating-a-repository-from-a-template>
-[GitHubDocs]: <https://docs.github.com/>
-[AzureDevOpsDocs]: <https://docs.microsoft.com/en-us/azure/devops/?view=azure-devops>
-[GitHubIssues]: <https://github.com/segraef/Template/issues>
-[Contributing]: CONTRIBUTING.md
-
-<!-- External -->
-[Az]: <https://img.shields.io/powershellgallery/v/Az.svg?style=flat-square&label=Az>
-[AzGallery]: <https://www.powershellgallery.com/packages/Az/>
-[PowerShellCore]: <https://github.com/PowerShell/PowerShell/releases/latest>
-
-<!-- Docs -->
-[MicrosoftAzureDocs]: <https://docs.microsoft.com/en-us/azure/>
-[PowerShellDocs]: <https://docs.microsoft.com/en-us/powershell/>
+afps is under active development. Many core features are implemented or in-progress. Contributions welcome!

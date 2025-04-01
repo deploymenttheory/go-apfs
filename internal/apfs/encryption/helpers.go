@@ -1,7 +1,7 @@
 package encryption
 
 import (
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // PackOsVersion creates a CpKeyOsVersionT from major version, minor letter, and build number

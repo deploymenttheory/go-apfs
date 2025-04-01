@@ -1,7 +1,7 @@
 package extendedfields
 
 import (
-	"github.com/deploymenttheory/go-apfs/apfs/types"
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // Field wraps types.XFieldT to provide helper methods.
