@@ -18,6 +18,30 @@ type CryptoStateReader interface {
 
 	// IsValid checks if the encryption state is valid
 	IsValid() bool
+
+	// MajorVersion returns the major version of the wrapped crypto state
+	MajorVersion() uint16
+
+	// MinorVersion returns the minor version of the wrapped crypto state
+	MinorVersion() uint16
+
+	// KeyLength returns the length of the wrapped key data
+	KeyLength() uint16
+
+	// WrappedKeyData returns the encrypted key data
+	WrappedKeyData() []byte
+
+	// CryptoFlags returns the encryption flags
+	CryptoFlags() types.CryptoFlagsT
+
+	// OSVersion returns the OS version that created this encryption state
+	OSVersion() types.CpKeyOsVersionT
+
+	// ObjectID returns the object identifier from the crypto key header
+	ObjectID() types.OidT
+
+	// ObjectType returns the object type from the crypto key header
+	ObjectType() uint32
 }
 
 // EncryptionKeyReader provides methods for reading encryption key information
@@ -48,6 +72,9 @@ type KeybagReader interface {
 
 	// ListEntries returns all keybag entries
 	ListEntries() []KeybagEntryReader
+
+	// IsValid checks if the keybag structure is valid
+	IsValid() bool
 }
 
 // KeybagEntryReader provides methods for reading individual keybag entries
@@ -66,6 +93,15 @@ type KeybagEntryReader interface {
 
 	// KeyData returns the raw key data
 	KeyData() []byte
+
+	// IsPersonalRecoveryKey checks if this entry contains a personal recovery key
+	IsPersonalRecoveryKey() bool
+
+	// IsVolumeKey checks if this entry contains a volume encryption key
+	IsVolumeKey() bool
+
+	// IsUnlockRecord checks if this entry contains volume unlock records
+	IsUnlockRecord() bool
 }
 
 // ProtectionClassResolver provides methods for resolving protection class information
@@ -78,6 +114,21 @@ type ProtectionClassResolver interface {
 
 	// ListSupportedProtectionClasses returns all supported protection classes
 	ListSupportedProtectionClasses() []types.CpKeyClassT
+
+	// IsValidProtectionClass checks if a protection class is known and valid
+	IsValidProtectionClass(class types.CpKeyClassT) bool
+
+	// GetEffectiveClass returns the effective protection class after applying the mask
+	GetEffectiveClass(class types.CpKeyClassT) types.CpKeyClassT
+
+	// IsiOSOnly returns true if the protection class is used only on iOS devices
+	IsiOSOnly(class types.CpKeyClassT) bool
+
+	// IsmacOSOnly returns true if the protection class is used only on macOS devices
+	IsmacOSOnly(class types.CpKeyClassT) bool
+
+	// GetSecurityLevel returns a numeric security level (higher = more secure)
+	GetSecurityLevel(class types.CpKeyClassT) int
 }
 
 // EncryptionInspector provides methods for comprehensive encryption analysis

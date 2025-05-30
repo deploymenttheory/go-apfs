@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/deploymenttheory/go-apfs/internal/apfs/container"
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
@@ -18,8 +20,6 @@ const (
 	containerSuperblockOffset = 0
 	// Standard APFS block size (default, can be overridden)
 	defaultBlockSize = 4096
-	// APFS container superblock magic ("NXSB")
-	nxMagic = 0x4253584E
 	// Typical location of checkpoint descriptor area in blocks from the start
 	checkpointDescAreaStartOffset = 1
 )
@@ -72,8 +72,8 @@ func (l *APFSJumpstartLocator) FindEFIJumpstart() (types.Paddr, error) {
 	}
 
 	// Check if magic is valid
-	if superblock.NxMagic != nxMagic {
-		return 0, fmt.Errorf("invalid container superblock magic: expected %#x, got %#x", nxMagic, superblock.NxMagic)
+	if superblock.NxMagic != types.NxMagic {
+		return 0, fmt.Errorf("invalid container superblock magic: expected %#x, got %#x", types.NxMagic, superblock.NxMagic)
 	}
 
 	// If the EFI jumpstart pointer is valid in the superblock, use it
@@ -190,9 +190,7 @@ func (l *APFSJumpstartLocator) readContainerSuperblock() (*types.NxSuperblockT, 
 	// Container superblock is at block 0 of the APFS container
 	offset := l.partitionOffset + containerSuperblockOffset
 
-	// Allocate buffer for the essential superblock fields
-	// In a real implementation, you'd read the entire superblock
-	// We're focusing on the fields we need for jumpstart locating
+	// Read enough data for the superblock
 	bufSize := 1536 // Size of the complete nx_superblock_t structure
 	buf := make([]byte, bufSize)
 
@@ -206,16 +204,49 @@ func (l *APFSJumpstartLocator) readContainerSuperblock() (*types.NxSuperblockT, 
 		return nil, fmt.Errorf("short read for container superblock: got %d bytes, need at least 256", n)
 	}
 
-	var superblock types.NxSuperblockT
-	reader := bytes.NewReader(buf)
-
-	// Parse container superblock fields
-	// We use binary.Read to properly handle platform-specific alignment
-	if err := binary.Read(reader, binary.LittleEndian, &superblock); err != nil {
-		return nil, fmt.Errorf("failed to parse container superblock: %w", err)
+	// Use the existing container superblock reader for proper parsing
+	csr, err := container.NewContainerSuperblockReader(buf, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create container superblock reader: %w", err)
 	}
 
-	return &superblock, nil
+	// Extract the parsed superblock data
+	// We need to construct a NxSuperblockT from the reader's methods
+	superblock := &types.NxSuperblockT{
+		NxMagic:          csr.Magic(),
+		NxBlockSize:      csr.BlockSize(),
+		NxBlockCount:     csr.BlockCount(),
+		NxUuid:           csr.UUID(),
+		NxNextOid:        csr.NextObjectID(),
+		NxNextXid:        csr.NextTransactionID(),
+		NxSpacemanOid:    csr.SpaceManagerOID(),
+		NxOmapOid:        csr.ObjectMapOID(),
+		NxReaperOid:      csr.ReaperOID(),
+		NxMaxFileSystems: csr.MaxFileSystems(),
+		NxEfiJumpstart:   csr.EFIJumpstart(),
+		NxFusionUuid:     csr.FusionUUID(),
+		NxKeylocker:      csr.KeylockerLocation(),
+		NxMkbLocker:      csr.MediaKeyLocation(),
+	}
+
+	// Copy volume OIDs
+	volumeOIDs := csr.VolumeOIDs()
+	for i, oid := range volumeOIDs {
+		if i < types.NxMaxFileSystems {
+			superblock.NxFsOid[i] = oid
+		}
+	}
+
+	// For checkpoint-related fields, we need to parse them manually since the container reader doesn't expose them
+	// Parse the essential checkpoint fields we need
+	if n >= 152 { // Ensure we have enough data for checkpoint fields
+		superblock.NxXpDescBlocks = binary.LittleEndian.Uint32(buf[104:108])
+		superblock.NxXpDescBase = types.Paddr(binary.LittleEndian.Uint64(buf[112:120]))
+		superblock.NxXpDescNext = binary.LittleEndian.Uint32(buf[128:132])
+		superblock.NxXpDescIndex = binary.LittleEndian.Uint32(buf[136:140])
+	}
+
+	return superblock, nil
 }
 
 // findJumpstartFromCheckpoints attempts to find the EFI jumpstart address by parsing
@@ -244,10 +275,25 @@ func (l *APFSJumpstartLocator) findJumpstartFromCheckpoints(superblock *types.Nx
 	// Find the most recent valid checkpoint
 	checkpointMapPhys, checkpointIndex, err := l.findLatestValidCheckpoint(checkpointDescBase, checkpointDescBlocks)
 	if err != nil {
+		// Only fall back to signature scanning for "no valid checkpoint map found" errors
+		// Preserve other errors like read failures or invalid indices
+		if strings.Contains(err.Error(), "no valid checkpoint map found") {
+			jumpstartAddr, scanErr := l.scanForJumpstartSignature(checkpointDescBase, checkpointDescBlocks)
+			if scanErr != nil {
+				return 0, fmt.Errorf("failed to find valid checkpoint: %w, and signature scan failed: %v", err, scanErr)
+			}
+			return jumpstartAddr, nil
+		}
+		// For other errors (read failures, invalid indices), don't fall back to signature scanning
 		return 0, fmt.Errorf("failed to find valid checkpoint: %w", err)
 	}
 	if checkpointMapPhys == nil {
-		return 0, fmt.Errorf("no valid checkpoint found")
+		// If no checkpoint map found, fall back to signature scanning
+		jumpstartAddr, err := l.scanForJumpstartSignature(checkpointDescBase, checkpointDescBlocks)
+		if err != nil {
+			return 0, fmt.Errorf("no valid checkpoint found and signature scan failed: %w", err)
+		}
+		return jumpstartAddr, nil
 	}
 
 	// Search through checkpoint mappings for EFI jumpstart object
@@ -347,28 +393,22 @@ func (l *APFSJumpstartLocator) readCheckpointMap(descBase types.Paddr, index uin
 		return nil, fmt.Errorf("failed to read checkpoint map block: %w", err)
 	}
 
-	if n < 24 { // Minimum size needed for the fixed part of CheckpointMapPhysT
-		return nil, fmt.Errorf("short read for checkpoint map: got %d bytes, need at least 24", n)
+	if n < 40 { // Minimum size needed: ObjPhysT (32) + flags (4) + count (4)
+		return nil, fmt.Errorf("short read for checkpoint map: got %d bytes, need at least 40", n)
 	}
-
-	// Parse the checkpoint map header
-	reader := bytes.NewReader(buf)
 
 	var checkpointMap types.CheckpointMapPhysT
 
-	// Read ObjPhysT header (oid, type, etc.)
-	if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmO); err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint map header: %w", err)
-	}
+	// Parse ObjPhysT header manually (32 bytes)
+	copy(checkpointMap.CpmO.OChecksum[:], buf[0:8])
+	checkpointMap.CpmO.OOid = types.OidT(binary.LittleEndian.Uint64(buf[8:16]))
+	checkpointMap.CpmO.OXid = types.XidT(binary.LittleEndian.Uint64(buf[16:24]))
+	checkpointMap.CpmO.OType = binary.LittleEndian.Uint32(buf[24:28])
+	checkpointMap.CpmO.OSubtype = binary.LittleEndian.Uint32(buf[28:32])
 
-	// Read flags and count
-	if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmFlags); err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint map flags: %w", err)
-	}
-
-	if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmCount); err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint map count: %w", err)
-	}
+	// Parse flags and count at correct offsets
+	checkpointMap.CpmFlags = binary.LittleEndian.Uint32(buf[32:36])
+	checkpointMap.CpmCount = binary.LittleEndian.Uint32(buf[36:40])
 
 	// Validate the count to avoid allocation issues
 	if checkpointMap.CpmCount > 1000 { // Arbitrary reasonable limit
@@ -382,9 +422,9 @@ func (l *APFSJumpstartLocator) readCheckpointMap(descBase types.Paddr, index uin
 	mappingSize := int(checkpointMap.CpmCount) * 48 // Each mapping is 48 bytes
 
 	// If mappings don't fit in the initial buffer, read more data
-	if 24+mappingSize > n {
+	if 40+mappingSize > n {
 		// Need to read more data to get all mappings
-		extendedBuf := make([]byte, 24+mappingSize)
+		extendedBuf := make([]byte, 40+mappingSize)
 		copy(extendedBuf[:n], buf) // Copy what we've already read
 
 		// Read the rest of the mappings
@@ -393,18 +433,26 @@ func (l *APFSJumpstartLocator) readCheckpointMap(descBase types.Paddr, index uin
 			return nil, fmt.Errorf("failed to read extended checkpoint map data: %w", err)
 		}
 
-		// Create a new reader with the extended buffer
-		reader = bytes.NewReader(extendedBuf[24:]) // Skip the header we already parsed
-	} else {
-		// Reset reader position to after the header
-		reader = bytes.NewReader(buf[24:n])
+		buf = extendedBuf // Use the extended buffer
 	}
 
-	// Read all mapping entries
+	// Parse all mapping entries manually starting at offset 40
+	mappingOffset := 40
 	for i := uint32(0); i < checkpointMap.CpmCount; i++ {
-		if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmMap[i]); err != nil {
-			return nil, fmt.Errorf("failed to read checkpoint mapping %d: %w", i, err)
+		if mappingOffset+48 > len(buf) {
+			return nil, fmt.Errorf("insufficient data for checkpoint mapping %d", i)
 		}
+
+		mapping := &checkpointMap.CpmMap[i]
+		mapping.CpmType = binary.LittleEndian.Uint32(buf[mappingOffset : mappingOffset+4])
+		mapping.CpmSubtype = binary.LittleEndian.Uint32(buf[mappingOffset+4 : mappingOffset+8])
+		mapping.CpmSize = binary.LittleEndian.Uint32(buf[mappingOffset+8 : mappingOffset+12])
+		mapping.CpmPad = binary.LittleEndian.Uint32(buf[mappingOffset+12 : mappingOffset+16])
+		mapping.CpmFsOid = types.OidT(binary.LittleEndian.Uint64(buf[mappingOffset+16 : mappingOffset+24]))
+		mapping.CpmOid = types.OidT(binary.LittleEndian.Uint64(buf[mappingOffset+24 : mappingOffset+32]))
+		mapping.CpmPaddr = types.Paddr(binary.LittleEndian.Uint64(buf[mappingOffset+32 : mappingOffset+40]))
+
+		mappingOffset += 48
 	}
 
 	return &checkpointMap, nil
@@ -483,23 +531,22 @@ func (l *APFSJumpstartLocator) readCheckpointMapFromPaddr(paddr types.Paddr) (*t
 		return nil, fmt.Errorf("failed to read checkpoint map from paddr %d: %w", paddr, err)
 	}
 
-	reader := bytes.NewReader(buf)
+	if n < 40 { // Minimum size needed: ObjPhysT (32) + flags (4) + count (4)
+		return nil, fmt.Errorf("short read for checkpoint map: got %d bytes, need at least 40", n)
+	}
 
 	var checkpointMap types.CheckpointMapPhysT
 
-	// Read ObjPhysT header
-	if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmO); err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint map header: %w", err)
-	}
+	// Parse ObjPhysT header manually (32 bytes)
+	copy(checkpointMap.CpmO.OChecksum[:], buf[0:8])
+	checkpointMap.CpmO.OOid = types.OidT(binary.LittleEndian.Uint64(buf[8:16]))
+	checkpointMap.CpmO.OXid = types.XidT(binary.LittleEndian.Uint64(buf[16:24]))
+	checkpointMap.CpmO.OType = binary.LittleEndian.Uint32(buf[24:28])
+	checkpointMap.CpmO.OSubtype = binary.LittleEndian.Uint32(buf[28:32])
 
-	// Read flags and count
-	if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmFlags); err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint map flags: %w", err)
-	}
-
-	if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmCount); err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint map count: %w", err)
-	}
+	// Parse flags and count at correct offsets
+	checkpointMap.CpmFlags = binary.LittleEndian.Uint32(buf[32:36])
+	checkpointMap.CpmCount = binary.LittleEndian.Uint32(buf[36:40])
 
 	// Validate the count
 	if checkpointMap.CpmCount > 1000 { // Arbitrary reasonable limit
@@ -509,10 +556,23 @@ func (l *APFSJumpstartLocator) readCheckpointMapFromPaddr(paddr types.Paddr) (*t
 	// Allocate and read the mapping entries
 	checkpointMap.CpmMap = make([]types.CheckpointMappingT, checkpointMap.CpmCount)
 
+	// Parse all mapping entries manually starting at offset 40
+	mappingOffset := 40
 	for i := uint32(0); i < checkpointMap.CpmCount; i++ {
-		if err := binary.Read(reader, binary.LittleEndian, &checkpointMap.CpmMap[i]); err != nil {
-			return nil, fmt.Errorf("failed to read checkpoint mapping %d: %w", i, err)
+		if mappingOffset+48 > n {
+			return nil, fmt.Errorf("insufficient data for checkpoint mapping %d", i)
 		}
+
+		mapping := &checkpointMap.CpmMap[i]
+		mapping.CpmType = binary.LittleEndian.Uint32(buf[mappingOffset : mappingOffset+4])
+		mapping.CpmSubtype = binary.LittleEndian.Uint32(buf[mappingOffset+4 : mappingOffset+8])
+		mapping.CpmSize = binary.LittleEndian.Uint32(buf[mappingOffset+8 : mappingOffset+12])
+		mapping.CpmPad = binary.LittleEndian.Uint32(buf[mappingOffset+12 : mappingOffset+16])
+		mapping.CpmFsOid = types.OidT(binary.LittleEndian.Uint64(buf[mappingOffset+16 : mappingOffset+24]))
+		mapping.CpmOid = types.OidT(binary.LittleEndian.Uint64(buf[mappingOffset+24 : mappingOffset+32]))
+		mapping.CpmPaddr = types.Paddr(binary.LittleEndian.Uint64(buf[mappingOffset+32 : mappingOffset+40]))
+
+		mappingOffset += 48
 	}
 
 	return &checkpointMap, nil
@@ -521,17 +581,13 @@ func (l *APFSJumpstartLocator) readCheckpointMapFromPaddr(paddr types.Paddr) (*t
 // scanForJumpstartSignature falls back to scanning for the jumpstart signature
 // This is a last resort if the checkpoint map parsing fails
 func (l *APFSJumpstartLocator) scanForJumpstartSignature(startBlock types.Paddr, blockCount uint32) (types.Paddr, error) {
-	// Calculate maximum scan range
-	maxScanBlocks := blockCount
-	if maxScanBlocks > 1024 {
-		maxScanBlocks = 1024 // Limit scan range for performance
-	}
+	// Scan the entire container, not just the checkpoint area
+	// Start from block 0 and scan up to a reasonable limit
+	maxScanBlocks := uint32(1024) // Limit scan range for performance
 
-	searchEnd := startBlock + types.Paddr(maxScanBlocks)
-
-	// Search for the jumpstart structure in blocks
+	// Search for the jumpstart structure in blocks starting from block 0
 	buf := make([]byte, l.blockSize)
-	for blockAddr := startBlock; blockAddr < searchEnd; blockAddr++ {
+	for blockAddr := types.Paddr(0); blockAddr < types.Paddr(maxScanBlocks); blockAddr++ {
 		offset := l.partitionOffset + int64(blockAddr)*int64(l.blockSize)
 
 		// Read the block

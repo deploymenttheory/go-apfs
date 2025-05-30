@@ -52,19 +52,15 @@ func (bc *SimpleBootabilityChecker) VerifyBootConfiguration() error {
 		return fmt.Errorf("basic jumpstart validation failed (magic/version mismatch)")
 	}
 
-	// If an analyzer was provided, use its verification method.
 	if bc.analyzer != nil {
 		err := bc.analyzer.VerifyEFIJumpstart()
 		if err != nil {
-			// Wrap the analyzer's error for context.
+
 			return fmt.Errorf("detailed boot configuration verification failed: %w", err)
 		}
-		// Potentially add more checks here if analyzer provides more detail,
-		// or if we had an EFIDriverExtractor to check the driver itself.
+
 		return nil // Analyzer verification passed
 	}
 
-	// If no analyzer, we can only rely on the basic IsValid check, which passed.
-	// Return nil, indicating basic configuration seems okay based on available info.
 	return nil
 }

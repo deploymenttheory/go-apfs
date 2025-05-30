@@ -16,30 +16,46 @@ func createMockSuperblock(jumpstartPaddr types.Paddr, xpDescBase types.Paddr, xp
 	// Create a buffer large enough for the full superblock structure (minimum 256 bytes for tests)
 	buf := make([]byte, 1536) // Size of NxSuperblockT structure
 
-	// Write the magic number at the beginning - critical for validation
-	// The magic is read as "NXSB" in memory, but stored on disk in little-endian as 0x4253584E
-	binary.LittleEndian.PutUint32(buf[0:4], 0x4253584E) // Little-endian representation of "NXSB"
+	// Write ObjPhysT header (32 bytes) - we'll just zero it for testing
+	// In a real implementation, this would have checksum, OID, XID, type, subtype
 
-	// Write the block size
-	binary.LittleEndian.PutUint32(buf[4:8], testBlockSize)
+	// Write the magic number at offset 32 (after ObjPhysT header)
+	// The magic is "NXSB" which is 0x4E585342 in little-endian
+	binary.LittleEndian.PutUint32(buf[32:36], 0x4E585342) // "NXSB" magic
 
-	// Add other essential fields at their proper offsets (based on APFS spec)
-	// The exact offsets would depend on the NxSuperblockT structure layout
+	// Write the block size at offset 36
+	binary.LittleEndian.PutUint32(buf[36:40], testBlockSize)
 
-	// NxXpDescBase (typically at offset ~30-32 bytes)
-	binary.LittleEndian.PutUint64(buf[32:40], uint64(xpDescBase))
+	// Write block count at offset 40
+	binary.LittleEndian.PutUint64(buf[40:48], 1000000) // Some reasonable block count
 
-	// NxXpDescBlocks (typically at offset ~40 bytes)
-	binary.LittleEndian.PutUint32(buf[40:44], xpDescBlocks)
+	// Skip features, UUID, etc. for now and go to checkpoint fields
 
-	// NxXpDescIndex (typically at offset ~50-52 bytes)
-	binary.LittleEndian.PutUint32(buf[52:56], xpDescIndex)
+	// NxXpDescBlocks at offset 104
+	binary.LittleEndian.PutUint32(buf[104:108], xpDescBlocks)
 
-	// NxXpDescNext (typically at offset ~54-56 bytes)
-	binary.LittleEndian.PutUint32(buf[56:60], xpDescNext)
+	// NxXpDescBase at offset 112
+	binary.LittleEndian.PutUint64(buf[112:120], uint64(xpDescBase))
 
-	// NxEfiJumpstart (typically at offset ~80-88 bytes)
-	binary.LittleEndian.PutUint64(buf[80:88], uint64(jumpstartPaddr))
+	// NxXpDescNext at offset 128
+	binary.LittleEndian.PutUint32(buf[128:132], xpDescNext)
+
+	// NxXpDescIndex at offset 136
+	binary.LittleEndian.PutUint32(buf[136:140], xpDescIndex)
+
+	// Skip to EFI jumpstart field - need to calculate the correct offset
+	// Based on the container reader, this should be around offset where NxEfiJumpstart is parsed
+	// Looking at the container reader, it's parsed after many fields, let me find the right offset
+
+	// Calculate the exact offset as done in the container reader:
+	// Start at 184 (after fixed fields)
+	// + NxMaxFileSystems * 8 (volume OIDs array)
+	// + NxNumCounters * 8 (counters array)
+	// + 16 (blocked out range)
+	// + 8 (evict mapping tree OID)
+	// + 8 (flags)
+	efiJumpstartOffset := 184 + (types.NxMaxFileSystems * 8) + (types.NxNumCounters * 8) + 16 + 8 + 8
+	binary.LittleEndian.PutUint64(buf[efiJumpstartOffset:efiJumpstartOffset+8], uint64(jumpstartPaddr))
 
 	return buf
 }
@@ -49,17 +65,19 @@ func createMockCheckpointMap(objType uint32, flags uint32, mappings []types.Chec
 	// Create a buffer of full block size
 	buf := make([]byte, testBlockSize)
 
-	// Write the object type at the right offset in ObjPhysT
-	binary.LittleEndian.PutUint32(buf[16:20], objType) // OType is typically at offset 16
+	// Write ObjPhysT header (32 bytes)
+	// For testing, we'll just write the object type at the correct offset
+	binary.LittleEndian.PutUint32(buf[24:28], objType) // OType at offset 24 in ObjPhysT
+	binary.LittleEndian.PutUint32(buf[28:32], 0)       // OSubtype at offset 28
 
-	// Write the checkpoint map flags
-	binary.LittleEndian.PutUint32(buf[20:24], flags)
+	// Write the checkpoint map flags at offset 32 (after ObjPhysT)
+	binary.LittleEndian.PutUint32(buf[32:36], flags)
 
-	// Write the count of mappings
-	binary.LittleEndian.PutUint32(buf[24:28], uint32(len(mappings)))
+	// Write the count of mappings at offset 36
+	binary.LittleEndian.PutUint32(buf[36:40], uint32(len(mappings)))
 
-	// Write each mapping
-	mappingOffset := 28 // Start after header and count
+	// Write each mapping starting at offset 40
+	mappingOffset := 40
 	for _, mapping := range mappings {
 		// Write the mapping type
 		binary.LittleEndian.PutUint32(buf[mappingOffset:mappingOffset+4], mapping.CpmType)
@@ -70,7 +88,8 @@ func createMockCheckpointMap(objType uint32, flags uint32, mappings []types.Chec
 		// Write the mapping size
 		binary.LittleEndian.PutUint32(buf[mappingOffset+8:mappingOffset+12], mapping.CpmSize)
 
-		// Skip padding (CpmPad)
+		// Write padding (CpmPad)
+		binary.LittleEndian.PutUint32(buf[mappingOffset+12:mappingOffset+16], 0)
 
 		// Write the FS OID
 		binary.LittleEndian.PutUint64(buf[mappingOffset+16:mappingOffset+24], uint64(mapping.CpmFsOid))
@@ -81,8 +100,8 @@ func createMockCheckpointMap(objType uint32, flags uint32, mappings []types.Chec
 		// Write the mapping physical address
 		binary.LittleEndian.PutUint64(buf[mappingOffset+32:mappingOffset+40], uint64(mapping.CpmPaddr))
 
-		// Move to next mapping
-		mappingOffset += 48 // Each mapping is 48 bytes
+		// Move to next mapping (each mapping is 48 bytes)
+		mappingOffset += 48
 	}
 
 	return buf
@@ -216,8 +235,8 @@ func TestFindEFIJumpstart_InvalidSuperblock(t *testing.T) {
 	// Create an invalid superblock (wrong magic)
 	mockSuperblock := createMockSuperblock(0, 0, 0, 0, 0)
 
-	// Corrupt the magic number
-	binary.LittleEndian.PutUint32(mockSuperblock[0:4], 0xBADBADBA) // Wrong magic
+	// Corrupt the magic number at the correct offset (32)
+	binary.LittleEndian.PutUint32(mockSuperblock[32:36], 0xBADBADBA) // Wrong magic
 
 	reader := bytes.NewReader(mockSuperblock)
 	locator, err := NewAPFSJumpstartLocator(reader, testBlockSize, 0)
@@ -265,7 +284,7 @@ func TestFindEFIJumpstart_JumpstartInCheckpointMap(t *testing.T) {
 	mockDisk := createMockDisk(
 		0,       // No jumpstart in superblock
 		1,       // Checkpoint descriptor at block 1
-		1, 0, 1, // 1 checkpoint block, index 0, next 1
+		2, 0, 1, // 2 checkpoint blocks, index 0, next 1
 		checkpointMaps, // Include our checkpoint map
 		true,           // Include jumpstart structure
 		0,              // No signature scan
@@ -449,10 +468,10 @@ func TestFindEFIJumpstart_InvalidCheckpointMap(t *testing.T) {
 	mockDisk := createMockDisk(
 		0,       // No jumpstart in superblock
 		1,       // Checkpoint descriptor at block 1
-		1, 0, 1, // 1 checkpoint block, index 0, next 1
+		2, 0, 1, // 2 checkpoint blocks, index 0, next 1
 		checkpointMaps, // Include our invalid checkpoint map
 		false,          // Don't include jumpstart structure
-		5,              // Add a signature scan location for fallback
+		5,              // Add signature scan location at block 5
 	)
 
 	reader := bytes.NewReader(mockDisk)
