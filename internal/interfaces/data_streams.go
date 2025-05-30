@@ -17,6 +17,39 @@ type PhysicalExtentReader interface {
 
 	// PhysicalBlockAddress returns the physical block address of the start of the extent
 	PhysicalBlockAddress() uint64
+
+	// IsKindNew checks if the extent kind is APFS_KIND_NEW
+	IsKindNew() bool
+
+	// IsKindUpdate checks if the extent kind is APFS_KIND_UPDATE
+	IsKindUpdate() bool
+
+	// IsKindDead checks if the extent kind is APFS_KIND_DEAD
+	IsKindDead() bool
+
+	// IsValidKind checks if the extent kind is valid for on-disk storage
+	IsValidKind() bool
+
+	// GetKindDescription returns a human-readable description of the extent kind
+	GetKindDescription() string
+
+	// CanBeDeleted checks if the extent can be deleted (reference count is zero)
+	CanBeDeleted() bool
+
+	// IsShared checks if the extent is shared (reference count > 1)
+	IsShared() bool
+
+	// SizeInBytes returns the extent size in bytes given a block size
+	SizeInBytes(blockSize uint32) uint64
+
+	// EndBlockAddress returns the physical block address of the end of the extent (exclusive)
+	EndBlockAddress() uint64
+
+	// ContainsBlock checks if the extent contains the given physical block address
+	ContainsBlock(blockAddress uint64) bool
+
+	// Validate performs validation checks on the physical extent
+	Validate() error
 }
 
 // FileExtentReader provides methods for reading information about file extents
