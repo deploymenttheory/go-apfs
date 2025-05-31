@@ -3199,8 +3199,7 @@ func (afs *APFSFileSystem) FormatFuseErrorf(format string, args ...interface{}) 
     if afs.debug {
         log.Printf(format, args...)
     }
-}
-```
+}```
 
 ```go
 ```

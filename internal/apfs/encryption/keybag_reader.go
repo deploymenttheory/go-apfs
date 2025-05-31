@@ -208,7 +208,7 @@ func (ker *keybagEntryReader) TagDescription() string {
 	case types.KbTagReserved1:
 		return "Reserved (1)"
 	case types.KbTagVolumeKey:
-		return "Volume Key (VEK)"
+		return "Volume Key"
 	case types.KbTagVolumeUnlockRecords:
 		return "Volume Unlock Records"
 	case types.KbTagVolumePassphraseHint:
