@@ -103,9 +103,5 @@ func (cmpr *checkpointMapReader) Mappings() []interfaces.CheckpointMappingReader
 
 // IsLast checks if this is the last checkpoint-mapping block in a given checkpoint
 func (cmpr *checkpointMapReader) IsLast() bool {
-	// Check for checkpoint flags that indicate this is the last block
-	// The exact flag value would need to be defined in types package
-	// For now, we'll implement a basic check
-	const CHECKPOINT_MAP_LAST uint32 = 0x00000001 // This would need to be defined in types
-	return cmpr.checkpointMap.CpmFlags&CHECKPOINT_MAP_LAST != 0
+	return cmpr.checkpointMap.CpmFlags&types.CheckpointMapLast != 0
 }
