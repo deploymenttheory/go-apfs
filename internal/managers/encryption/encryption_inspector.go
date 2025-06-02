@@ -3,6 +3,7 @@ package encryption
 import (
 	"fmt"
 
+	"github.com/deploymenttheory/go-apfs/internal/helpers"
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
@@ -81,7 +82,7 @@ func (ei *encryptionInspector) AnalyzeEncryptionState() (interfaces.EncryptionSt
 
 	// OS version information
 	osVersion := ei.cryptoStateReader.OSVersion()
-	majorVersion, minorLetter, buildNumber := UnpackOsVersion(osVersion)
+	majorVersion, minorLetter, buildNumber := helpers.UnpackOsVersion(osVersion)
 	analysis.Metadata["os_major_version"] = fmt.Sprintf("%d", majorVersion)
 	analysis.Metadata["os_minor_letter"] = fmt.Sprintf("%c", minorLetter)
 	analysis.Metadata["os_build_number"] = fmt.Sprintf("%d", buildNumber)

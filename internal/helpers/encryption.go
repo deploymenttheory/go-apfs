@@ -1,4 +1,4 @@
-package encryption
+package helpers
 
 import (
 	"github.com/deploymenttheory/go-apfs/internal/types"

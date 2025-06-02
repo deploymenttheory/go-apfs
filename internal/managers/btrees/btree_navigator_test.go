@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	parser "github.com/deploymenttheory/go-apfs/internal/parsers/btrees"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
@@ -312,7 +313,7 @@ func TestBTreeNavigator_GetChildNode(t *testing.T) {
 	t.Run("leaf node error", func(t *testing.T) {
 		leafData := createTestNavigatorNodeData(2000, types.BtnodeLeaf, 0, 5, true)
 		blockReader.SetBlock(2000, leafData)
-		leafNode, _ := NewBTreeNodeReader(leafData, binary.LittleEndian)
+		leafNode, _ := parser.NewBTreeNodeReader(leafData, binary.LittleEndian)
 
 		_, err := navigator.GetChildNode(leafNode, 0)
 		if err == nil {

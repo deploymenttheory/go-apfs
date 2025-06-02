@@ -5,8 +5,49 @@ import (
 	"testing"
 
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
+	cryptoParser "github.com/deploymenttheory/go-apfs/internal/parsers/encryption"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
+
+// createTestCryptoData creates test crypto key and value data - copied from parser package
+func createTestCryptoData(objID types.OidT, objType uint32, refCount uint32, protectionClass types.CpKeyClassT, keyVersion types.CpKeyRevisionT, keyLen uint16, endian binary.ByteOrder) ([]byte, []byte) {
+	// Create key data (8 bytes for JKeyT)
+	keyData := make([]byte, 8)
+	objIdAndType := uint64(objID) | (uint64(objType) << types.ObjTypeShift)
+	endian.PutUint64(keyData[0:8], objIdAndType)
+
+	// Create value data
+	valueSize := 4 + 20 + int(keyLen) // refcnt + wrapped state header + key data
+	valueData := make([]byte, valueSize)
+	offset := 0
+
+	// Reference count
+	endian.PutUint32(valueData[offset:offset+4], refCount)
+	offset += 4
+
+	// Wrapped crypto state
+	endian.PutUint16(valueData[offset:offset+2], 5) // major version
+	offset += 2
+	endian.PutUint16(valueData[offset:offset+2], 0) // minor version
+	offset += 2
+	endian.PutUint32(valueData[offset:offset+4], 0) // flags
+	offset += 4
+	endian.PutUint32(valueData[offset:offset+4], uint32(protectionClass)) // protection class
+	offset += 4
+	endian.PutUint32(valueData[offset:offset+4], 0x12345678) // OS version
+	offset += 4
+	endian.PutUint16(valueData[offset:offset+2], uint16(keyVersion)) // key revision
+	offset += 2
+	endian.PutUint16(valueData[offset:offset+2], keyLen) // key length
+	offset += 2
+
+	// Key data (fill with test pattern)
+	for i := uint16(0); i < keyLen; i++ {
+		valueData[offset+int(i)] = byte(i % 256)
+	}
+
+	return keyData, valueData
+}
 
 func createMockCryptoStateReader(objID types.OidT, refCount uint32, protectionClass types.CpKeyClassT, keyVersion types.CpKeyRevisionT, keyLen uint16, valid bool) interfaces.CryptoStateReader {
 	endian := binary.LittleEndian
@@ -19,7 +60,7 @@ func createMockCryptoStateReader(objID types.OidT, refCount uint32, protectionCl
 		}
 	}
 
-	reader, _ := NewCryptoStateReader(keyData, valueData, endian)
+	reader, _ := cryptoParser.NewCryptoStateReader(keyData, valueData, endian)
 	return reader
 }
 

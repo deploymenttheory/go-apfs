@@ -8,9 +8,9 @@ import (
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
-// containerSuperblockReader implements the ContainerSuperblockReader interface
-type containerSuperblockReader struct {
-	superblock *types.NxSuperblockT
+// ContainerSuperblockReader implements the ContainerSuperblockReader interface
+type ContainerSuperblockReader struct {
+	Superblock *types.NxSuperblockT
 	data       []byte
 	endian     binary.ByteOrder
 }
@@ -31,8 +31,8 @@ func NewContainerSuperblockReader(data []byte, endian binary.ByteOrder) (interfa
 		return nil, fmt.Errorf("invalid container superblock magic: got 0x%08X, want 0x%08X", superblock.NxMagic, types.NxMagic)
 	}
 
-	return &containerSuperblockReader{
-		superblock: superblock,
+	return &ContainerSuperblockReader{
+		Superblock: superblock,
 		data:       data,
 		endian:     endian,
 	}, nil
@@ -157,108 +157,108 @@ func parseContainerSuperblock(data []byte, endian binary.ByteOrder) (*types.NxSu
 }
 
 // Magic returns the magic number for validating the container superblock
-func (csr *containerSuperblockReader) Magic() uint32 {
-	return csr.superblock.NxMagic
+func (csr *ContainerSuperblockReader) Magic() uint32 {
+	return csr.Superblock.NxMagic
 }
 
 // BlockSize returns the logical block size used in the container
-func (csr *containerSuperblockReader) BlockSize() uint32 {
-	return csr.superblock.NxBlockSize
+func (csr *ContainerSuperblockReader) BlockSize() uint32 {
+	return csr.Superblock.NxBlockSize
 }
 
 // BlockCount returns the total number of logical blocks available in the container
-func (csr *containerSuperblockReader) BlockCount() uint64 {
-	return csr.superblock.NxBlockCount
+func (csr *ContainerSuperblockReader) BlockCount() uint64 {
+	return csr.Superblock.NxBlockCount
 }
 
 // UUID returns the universally unique identifier of the container
-func (csr *containerSuperblockReader) UUID() types.UUID {
-	return csr.superblock.NxUuid
+func (csr *ContainerSuperblockReader) UUID() types.UUID {
+	return csr.Superblock.NxUuid
 }
 
 // NextObjectID returns the next object identifier to be used for new ephemeral or virtual objects
-func (csr *containerSuperblockReader) NextObjectID() types.OidT {
-	return csr.superblock.NxNextOid
+func (csr *ContainerSuperblockReader) NextObjectID() types.OidT {
+	return csr.Superblock.NxNextOid
 }
 
 // NextTransactionID returns the next transaction to be used
-func (csr *containerSuperblockReader) NextTransactionID() types.XidT {
-	return csr.superblock.NxNextXid
+func (csr *ContainerSuperblockReader) NextTransactionID() types.XidT {
+	return csr.Superblock.NxNextXid
 }
 
 // SpaceManagerOID returns the ephemeral object identifier for the space manager
-func (csr *containerSuperblockReader) SpaceManagerOID() types.OidT {
-	return csr.superblock.NxSpacemanOid
+func (csr *ContainerSuperblockReader) SpaceManagerOID() types.OidT {
+	return csr.Superblock.NxSpacemanOid
 }
 
 // ObjectMapOID returns the physical object identifier for the container's object map
-func (csr *containerSuperblockReader) ObjectMapOID() types.OidT {
-	return csr.superblock.NxOmapOid
+func (csr *ContainerSuperblockReader) ObjectMapOID() types.OidT {
+	return csr.Superblock.NxOmapOid
 }
 
 // ReaperOID returns the ephemeral object identifier for the reaper
-func (csr *containerSuperblockReader) ReaperOID() types.OidT {
-	return csr.superblock.NxReaperOid
+func (csr *ContainerSuperblockReader) ReaperOID() types.OidT {
+	return csr.Superblock.NxReaperOid
 }
 
 // MaxFileSystems returns the maximum number of volumes that can be stored in this container
-func (csr *containerSuperblockReader) MaxFileSystems() uint32 {
-	return csr.superblock.NxMaxFileSystems
+func (csr *ContainerSuperblockReader) MaxFileSystems() uint32 {
+	return csr.Superblock.NxMaxFileSystems
 }
 
 // VolumeOIDs returns the array of virtual object identifiers for volumes
-func (csr *containerSuperblockReader) VolumeOIDs() []types.OidT {
+func (csr *ContainerSuperblockReader) VolumeOIDs() []types.OidT {
 	// Return only the valid (non-zero) volume OIDs
 	var validOIDs []types.OidT
-	for i := uint32(0); i < csr.superblock.NxMaxFileSystems; i++ {
-		if csr.superblock.NxFsOid[i] != 0 {
-			validOIDs = append(validOIDs, csr.superblock.NxFsOid[i])
+	for i := uint32(0); i < csr.Superblock.NxMaxFileSystems; i++ {
+		if csr.Superblock.NxFsOid[i] != 0 {
+			validOIDs = append(validOIDs, csr.Superblock.NxFsOid[i])
 		}
 	}
 	return validOIDs
 }
 
 // EFIJumpstart returns the physical object identifier of the object that contains EFI driver data
-func (csr *containerSuperblockReader) EFIJumpstart() types.Paddr {
-	return csr.superblock.NxEfiJumpstart
+func (csr *ContainerSuperblockReader) EFIJumpstart() types.Paddr {
+	return csr.Superblock.NxEfiJumpstart
 }
 
 // FusionUUID returns the UUID of the container's Fusion set
-func (csr *containerSuperblockReader) FusionUUID() types.UUID {
-	return csr.superblock.NxFusionUuid
+func (csr *ContainerSuperblockReader) FusionUUID() types.UUID {
+	return csr.Superblock.NxFusionUuid
 }
 
 // KeylockerLocation returns the location of the container's keybag
-func (csr *containerSuperblockReader) KeylockerLocation() types.Prange {
-	return csr.superblock.NxKeylocker
+func (csr *ContainerSuperblockReader) KeylockerLocation() types.Prange {
+	return csr.Superblock.NxKeylocker
 }
 
 // MediaKeyLocation returns the wrapped media key location
-func (csr *containerSuperblockReader) MediaKeyLocation() types.Prange {
-	return csr.superblock.NxMkbLocker
+func (csr *ContainerSuperblockReader) MediaKeyLocation() types.Prange {
+	return csr.Superblock.NxMkbLocker
 }
 
 // BlockedOutRange returns the blocked-out physical address range
-func (csr *containerSuperblockReader) BlockedOutRange() types.Prange {
-	return csr.superblock.NxBlockedOutPrange
+func (csr *ContainerSuperblockReader) BlockedOutRange() types.Prange {
+	return csr.Superblock.NxBlockedOutPrange
 }
 
 // EvictMappingTreeOID returns the object identifier of the evict-mapping tree
-func (csr *containerSuperblockReader) EvictMappingTreeOID() types.OidT {
-	return csr.superblock.NxEvictMappingTreeOid
+func (csr *ContainerSuperblockReader) EvictMappingTreeOID() types.OidT {
+	return csr.Superblock.NxEvictMappingTreeOid
 }
 
 // TestType returns the container's test type for debugging
-func (csr *containerSuperblockReader) TestType() uint32 {
-	return csr.superblock.NxTestType
+func (csr *ContainerSuperblockReader) TestType() uint32 {
+	return csr.Superblock.NxTestType
 }
 
 // TestOID returns the test object identifier for debugging
-func (csr *containerSuperblockReader) TestOID() types.OidT {
-	return csr.superblock.NxTestOid
+func (csr *ContainerSuperblockReader) TestOID() types.OidT {
+	return csr.Superblock.NxTestOid
 }
 
 // NewestMountedVersion returns the newest version of APFS that has mounted this container
-func (csr *containerSuperblockReader) NewestMountedVersion() uint64 {
-	return csr.superblock.NxNewestMountedVersion
+func (csr *ContainerSuperblockReader) NewestMountedVersion() uint64 {
+	return csr.Superblock.NxNewestMountedVersion
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"testing"
 
+	helpers "github.com/deploymenttheory/go-apfs/internal/helpers"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
@@ -248,7 +249,7 @@ func TestCryptoStateReaderOSVersion(t *testing.T) {
 	minorLetter := byte('A')
 	buildNumber := uint32(12345)
 
-	packedVersion := PackOsVersion(majorVersion, minorLetter, buildNumber)
+	packedVersion := helpers.PackOsVersion(majorVersion, minorLetter, buildNumber)
 
 	keyData, valueData := createTestCryptoData(12345, types.ObjectTypeTest, 1, types.ProtectionClassC, 1, 32, endian)
 
@@ -262,7 +263,7 @@ func TestCryptoStateReaderOSVersion(t *testing.T) {
 	}
 
 	osVersion := csr.OSVersion()
-	unpackedMajor, unpackedMinor, unpackedBuild := UnpackOsVersion(osVersion)
+	unpackedMajor, unpackedMinor, unpackedBuild := helpers.UnpackOsVersion(osVersion)
 
 	if unpackedMajor != majorVersion {
 		t.Errorf("Unpacked major version = %d, want %d", unpackedMajor, majorVersion)

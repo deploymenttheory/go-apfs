@@ -2,6 +2,7 @@ package btrees
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
@@ -181,13 +182,119 @@ func (searcher *btreeSearcher) extractFixedSizeEntries(node interfaces.BTreeNode
 
 // extractVariableSizeEntries extracts entries from a variable-size key/value node
 func (searcher *btreeSearcher) extractVariableSizeEntries(node interfaces.BTreeNodeReader) ([]interfaces.KeyValuePair, error) {
-	// This is a placeholder implementation for variable-size entries
-	// Real APFS implementation would need to:
-	// 1. Parse the table of contents to get key/value locations
-	// 2. Extract each key/value pair based on the locations
-	// 3. Handle the complex layout of variable-size entries
+	nodeData := node.Data()
+	keyCount := node.KeyCount()
 
-	return nil, fmt.Errorf("variable-size entry extraction not yet implemented")
+	if keyCount == 0 {
+		return []interfaces.KeyValuePair{}, nil
+	}
+
+	// Variable-size nodes use a table of contents (TOC) that starts at the beginning of the data
+	// The TOC contains location information for each key-value pair
+	entries := make([]interfaces.KeyValuePair, 0, keyCount)
+
+	// Each TOC entry is typically 4 bytes (2 bytes key offset + 2 bytes value offset)
+	// or 8 bytes for nodes with aligned KV (4 bytes each)
+	tocEntrySize := 4
+	if node.HasFixedKVSize() {
+		tocEntrySize = 8 // Aligned nodes use larger offsets
+	}
+
+	// Calculate minimum required space for TOC
+	minTocSize := int(keyCount) * tocEntrySize
+	if len(nodeData) < minTocSize {
+		return nil, fmt.Errorf("insufficient node data for TOC: need %d bytes, have %d", minTocSize, len(nodeData))
+	}
+
+	endian := searcher.getEndianness()
+
+	for i := uint32(0); i < keyCount; i++ {
+		tocOffset := int(i) * tocEntrySize
+
+		var keyOffset, valueOffset uint16
+		if tocEntrySize == 4 {
+			// Standard 4-byte TOC entries
+			keyOffset = endian.Uint16(nodeData[tocOffset : tocOffset+2])
+			valueOffset = endian.Uint16(nodeData[tocOffset+2 : tocOffset+4])
+		} else {
+			// 8-byte aligned TOC entries
+			keyOffset = uint16(endian.Uint32(nodeData[tocOffset : tocOffset+4]))
+			valueOffset = uint16(endian.Uint32(nodeData[tocOffset+4 : tocOffset+8]))
+		}
+
+		// Validate offsets are within node bounds
+		if int(keyOffset) >= len(nodeData) || int(valueOffset) >= len(nodeData) {
+			return nil, fmt.Errorf("invalid TOC entry %d: key offset %d or value offset %d exceeds node size %d",
+				i, keyOffset, valueOffset, len(nodeData))
+		}
+
+		// Extract key
+		var key []byte
+		if i < keyCount-1 {
+			// Not the last entry, calculate key length from next entry's key offset
+			nextTocOffset := int(i+1) * tocEntrySize
+			var nextKeyOffset uint16
+			if tocEntrySize == 4 {
+				nextKeyOffset = endian.Uint16(nodeData[nextTocOffset : nextTocOffset+2])
+			} else {
+				nextKeyOffset = uint16(endian.Uint32(nodeData[nextTocOffset : nextTocOffset+4]))
+			}
+			keyLength := nextKeyOffset - keyOffset
+			if int(keyOffset)+int(keyLength) > len(nodeData) {
+				return nil, fmt.Errorf("key %d extends beyond node data", i)
+			}
+			key = make([]byte, keyLength)
+			copy(key, nodeData[keyOffset:keyOffset+keyLength])
+		} else {
+			// Last entry, key extends to value offset
+			keyLength := valueOffset - keyOffset
+			if int(keyOffset)+int(keyLength) > len(nodeData) {
+				return nil, fmt.Errorf("last key %d extends beyond node data", i)
+			}
+			key = make([]byte, keyLength)
+			copy(key, nodeData[keyOffset:keyOffset+keyLength])
+		}
+
+		// Extract value
+		var value []byte
+		if i < keyCount-1 {
+			// Not the last entry, calculate value length from next entry's value offset
+			nextTocOffset := int(i+1) * tocEntrySize
+			var nextValueOffset uint16
+			if tocEntrySize == 4 {
+				nextValueOffset = endian.Uint16(nodeData[nextTocOffset+2 : nextTocOffset+4])
+			} else {
+				nextValueOffset = uint16(endian.Uint32(nodeData[nextTocOffset+4 : nextTocOffset+8]))
+			}
+			valueLength := nextValueOffset - valueOffset
+			if int(valueOffset)+int(valueLength) > len(nodeData) {
+				return nil, fmt.Errorf("value %d extends beyond node data", i)
+			}
+			value = make([]byte, valueLength)
+			copy(value, nodeData[valueOffset:valueOffset+valueLength])
+		} else {
+			// Last entry, value extends to end of node data
+			valueLength := len(nodeData) - int(valueOffset)
+			if valueLength < 0 {
+				return nil, fmt.Errorf("last value %d has negative length", i)
+			}
+			value = make([]byte, valueLength)
+			copy(value, nodeData[valueOffset:])
+		}
+
+		entries = append(entries, interfaces.KeyValuePair{
+			Key:   key,
+			Value: value,
+		})
+	}
+
+	return entries, nil
+}
+
+// getEndianness returns the byte order for this platform
+func (searcher *btreeSearcher) getEndianness() binary.ByteOrder {
+	// APFS uses little-endian on all supported platforms
+	return binary.LittleEndian
 }
 
 // traverseRange traverses all key-value pairs within a range

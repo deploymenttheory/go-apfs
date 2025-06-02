@@ -7,8 +7,8 @@ import (
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
-// createTestContainerSuperblockData creates test container superblock data
-func createTestContainerSuperblockData(magic uint32, blockSize uint32, blockCount uint64, features uint64, uuid types.UUID, nextOID types.OidT, nextXID types.XidT, maxFileSystems uint32, endian binary.ByteOrder) []byte {
+// CreateTestContainerSuperblockData creates test container superblock data
+func CreateTestContainerSuperblockData(magic uint32, blockSize uint32, blockCount uint64, features uint64, uuid types.UUID, nextOID types.OidT, nextXID types.XidT, maxFileSystems uint32, endian binary.ByteOrder) []byte {
 	// Calculate required size:
 	// Object header: 32 bytes
 	// Container superblock fixed fields: ~156 bytes (up to volume OIDs)
@@ -184,7 +184,7 @@ func TestContainerSuperblockReader(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			uuid := types.UUID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10}
-			data := createTestContainerSuperblockData(tc.magic, tc.blockSize, tc.blockCount, tc.features, uuid, 5000, 6000, tc.maxFileSystems, endian)
+			data := CreateTestContainerSuperblockData(tc.magic, tc.blockSize, tc.blockCount, tc.features, uuid, 5000, 6000, tc.maxFileSystems, endian)
 
 			csr, err := NewContainerSuperblockReader(data, endian)
 			if !tc.expectValidMagic {
@@ -302,7 +302,7 @@ func TestContainerSuperblockReader_ErrorCases(t *testing.T) {
 			var data []byte
 			if tc.dataSize > 0 {
 				uuid := types.UUID{}
-				data = createTestContainerSuperblockData(tc.magic, 4096, 1000000, 0, uuid, 1000, 2000, 10, endian)
+				data = CreateTestContainerSuperblockData(tc.magic, 4096, 1000000, 0, uuid, 1000, 2000, 10, endian)
 				if tc.dataSize < len(data) {
 					data = data[:tc.dataSize]
 				}
@@ -329,7 +329,7 @@ func TestContainerSuperblockReader_EndianHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			uuid := types.UUID{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00}
-			data := createTestContainerSuperblockData(types.NxMagic, 8192, 5000000, types.NxFeatureDefrag, uuid, 0x1234567890ABCDEF, 0xFEDCBA0987654321, 25, tc.endian)
+			data := CreateTestContainerSuperblockData(types.NxMagic, 8192, 5000000, types.NxFeatureDefrag, uuid, 0x1234567890ABCDEF, 0xFEDCBA0987654321, 25, tc.endian)
 
 			csr, err := NewContainerSuperblockReader(data, tc.endian)
 			if err != nil {
@@ -378,7 +378,7 @@ func TestContainerSuperblockReader_MagicValidation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			data := createTestContainerSuperblockData(tc.magic, 4096, 1000000, 0, uuid, 1000, 2000, 10, endian)
+			data := CreateTestContainerSuperblockData(tc.magic, 4096, 1000000, 0, uuid, 1000, 2000, 10, endian)
 
 			_, err := NewContainerSuperblockReader(data, endian)
 			if tc.shouldError && err == nil {
@@ -394,7 +394,7 @@ func TestContainerSuperblockReader_MagicValidation(t *testing.T) {
 func TestContainerSuperblockReader_VolumeOIDFiltering(t *testing.T) {
 	endian := binary.LittleEndian
 	uuid := types.UUID{}
-	data := createTestContainerSuperblockData(types.NxMagic, 4096, 1000000, 0, uuid, 1000, 2000, 10, endian)
+	data := CreateTestContainerSuperblockData(types.NxMagic, 4096, 1000000, 0, uuid, 1000, 2000, 10, endian)
 
 	csr, err := NewContainerSuperblockReader(data, endian)
 	if err != nil {
@@ -420,7 +420,7 @@ func TestContainerSuperblockReader_VolumeOIDFiltering(t *testing.T) {
 func BenchmarkContainerSuperblockReader(b *testing.B) {
 	endian := binary.LittleEndian
 	uuid := types.UUID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10}
-	data := createTestContainerSuperblockData(types.NxMagic, 4096, 1000000, types.NxFeatureDefrag, uuid, 1000, 2000, 10, endian)
+	data := CreateTestContainerSuperblockData(types.NxMagic, 4096, 1000000, types.NxFeatureDefrag, uuid, 1000, 2000, 10, endian)
 	csr, _ := NewContainerSuperblockReader(data, endian)
 
 	b.Run("Magic", func(b *testing.B) {

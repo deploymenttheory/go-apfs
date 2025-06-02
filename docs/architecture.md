@@ -4,6 +4,54 @@
 
 Go-APFS is a cross-platform, read-only implementation for parsing and exploring Apple File System (APFS) volumes directly from raw disk structures. The project is built with clean architecture principles emphasizing separation of concerns, interface segregation, and the DRY principle.
 
+```bash
+┌─────────────────────────────────────────────────────────────┐
+│                    ENTRY POINTS                             │
+├─────────────────────┬─────────────────────┬─────────────────┤
+│        CLI          │         API         │     Web UI      │
+│   (Cobra/Viper)     │    (HTTP/gRPC)      │   (Optional)    │
+└─────────────────────┴─────────────────────┴─────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                 APPLICATION LAYER                           │
+├─────────────────────────────────────────────────────────────┤
+│  • Request Validation                                       │
+│  • Input/Output Formatting                                  │
+│  • Authentication/Authorization (API)                       │
+│  • Progress Reporting                                       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                 ORCHESTRATION LAYER                         │
+├─────────────────────────────────────────────────────────────┤
+│  • Workflow Orchestrator                                    │
+│  • Cross-Service Coordination                               │
+│  • Transaction Management                                   │
+│  • Resource Lifecycle Management                            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                   SERVICES LAYER                            │
+├─────────────────────┬─────────────────────┬─────────────────┤
+│   Container Service │  Filesystem Service │ Analysis Service│
+│   Extraction Service│    Volume Service   │   DMG Service   │
+└─────────────────────┴─────────────────────┴─────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│               MIDDLEWARE MANAGERS                           │
+├─────────────────────┬─────────────────────┬─────────────────┤
+│  Container Manager  │   Volume Manager    │  Object Manager │
+│  Feature Manager    │ Checkpoint Manager  │ Encryption Mgr  │
+└─────────────────────┴─────────────────────┴─────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                LOW-LEVEL OPERATIONS                         │
+├─────────────────────┬─────────────────────┬─────────────────┤
+│      Parsers        │    Block Readers    │   Validators    │
+│   Type Definitions  │    Crypto Handlers  │   Utilities     │
+└─────────────────────┴─────────────────────┴─────────────────┘
+```
+
 ## Core Principles
 
 The architecture follows these coding principles:

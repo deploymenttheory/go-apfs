@@ -8,8 +8,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/deploymenttheory/go-apfs/internal/apfs/container"
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
+	"github.com/deploymenttheory/go-apfs/internal/parsers/container"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
