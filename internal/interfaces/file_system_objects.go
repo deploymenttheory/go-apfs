@@ -83,6 +83,23 @@ type DirectoryEntryReader interface {
 	FileType() uint16
 }
 
+// DirectoryStatsReader provides methods for reading directory statistics information
+type DirectoryStatsReader interface {
+	FileSystemObjectReader
+
+	// NumChildren returns the number of files and folders in the directory
+	NumChildren() uint64
+
+	// TotalSize returns the total size of all files in the directory and descendants
+	TotalSize() uint64
+
+	// ChainedKey returns the parent directory's file system object identifier
+	ChainedKey() uint64
+
+	// GenCount returns the generation counter
+	GenCount() uint64
+}
+
 // ExtendedAttributeReader provides methods for reading extended attribute information
 type ExtendedAttributeReader interface {
 	FileSystemObjectReader
