@@ -98,3 +98,182 @@ const (
 	ChangeTypeModified
 	ChangeTypeDeleted
 )
+
+// SnapshotComparator provides methods for comparing snapshots
+type SnapshotComparator interface {
+	// CompareSnapshots compares two snapshots and returns the differences
+	CompareSnapshots(snap1, snap2 SnapshotReader) (SnapshotDiff, error)
+
+	// GetChangedFiles returns files that changed between two snapshots
+	GetChangedFiles(snap1, snap2 SnapshotReader) ([]FileChange, error)
+
+	// GetChangedDirectories returns directories that changed between two snapshots
+	GetChangedDirectories(snap1, snap2 SnapshotReader) ([]DirectoryChange, error)
+
+	// ComputeDelta computes the delta between two snapshots
+	ComputeDelta(older, newer SnapshotReader) (SnapshotDelta, error)
+}
+
+// SnapshotDiff represents the differences between two snapshots
+type SnapshotDiff struct {
+	// The older snapshot being compared
+	OlderSnapshot SnapshotReader
+
+	// The newer snapshot being compared
+	NewerSnapshot SnapshotReader
+
+	// Files that were added in the newer snapshot
+	AddedFiles []FileChange
+
+	// Files that were modified between snapshots
+	ModifiedFiles []FileChange
+
+	// Files that were deleted in the newer snapshot
+	DeletedFiles []FileChange
+
+	// Directories that changed
+	ChangedDirectories []DirectoryChange
+
+	// Summary statistics
+	TotalChanges int64
+	BytesChanged int64
+}
+
+// FileChange represents a change to a file between snapshots
+type FileChange struct {
+	// The file's inode ID
+	InodeID uint64
+
+	// The file's path
+	Path string
+
+	// Type of change
+	ChangeType ChangeType
+
+	// Old file size (for modifications and deletions)
+	OldSize uint64
+
+	// New file size (for additions and modifications)
+	NewSize uint64
+
+	// Old modification time
+	OldModTime time.Time
+
+	// New modification time
+	NewModTime time.Time
+}
+
+// DirectoryChange represents a change to a directory between snapshots
+type DirectoryChange struct {
+	// The directory's inode ID
+	InodeID uint64
+
+	// The directory's path
+	Path string
+
+	// Type of change
+	ChangeType ChangeType
+
+	// Number of files added to this directory
+	FilesAdded int
+
+	// Number of files removed from this directory
+	FilesRemoved int
+
+	// Number of files modified in this directory
+	FilesModified int
+}
+
+// SnapshotDelta represents the delta between two snapshots
+type SnapshotDelta struct {
+	// The transaction ID range covered by this delta
+	StartTransactionID types.XidT
+	EndTransactionID   types.XidT
+
+	// Changed inodes in this delta
+	ChangedInodes []uint64
+
+	// New extents allocated in this delta
+	NewExtents []types.Prange
+
+	// Freed extents in this delta
+	FreedExtents []types.Prange
+
+	// Size of the delta in bytes
+	DeltaSize uint64
+}
+
+// SnapshotAnalyzer provides methods for analyzing snapshot behavior and efficiency
+type SnapshotAnalyzer interface {
+	// AnalyzeSnapshotEfficiency analyzes how efficiently snapshots are using space
+	AnalyzeSnapshotEfficiency(snapshots []SnapshotReader) (SnapshotEfficiencyAnalysis, error)
+
+	// GetSnapshotTimeline creates a timeline of snapshot creation and changes
+	GetSnapshotTimeline() (SnapshotTimeline, error)
+
+	// CalculateSnapshotOverhead calculates storage overhead of maintaining snapshots
+	CalculateSnapshotOverhead() (SnapshotOverhead, error)
+}
+
+// SnapshotEfficiencyAnalysis contains analysis of snapshot storage efficiency
+type SnapshotEfficiencyAnalysis struct {
+	// Total number of snapshots analyzed
+	SnapshotCount int
+
+	// Total storage overhead from snapshots
+	TotalOverhead uint64
+
+	// Average storage overhead per snapshot
+	AverageOverhead uint64
+
+	// Most storage-efficient snapshot
+	MostEfficient SnapshotReader
+
+	// Least storage-efficient snapshot
+	LeastEfficient SnapshotReader
+
+	// Recommended snapshots to delete for space savings
+	RecommendedDeletions []SnapshotReader
+}
+
+// SnapshotTimeline represents a chronological view of snapshots
+type SnapshotTimeline struct {
+	// Snapshots in chronological order
+	Snapshots []SnapshotTimelineEntry
+
+	// Total time span covered
+	TimeSpan time.Duration
+
+	// Average time between snapshots
+	AverageInterval time.Duration
+}
+
+// SnapshotTimelineEntry represents one entry in a snapshot timeline
+type SnapshotTimelineEntry struct {
+	// The snapshot
+	Snapshot SnapshotReader
+
+	// Number of changes since the previous snapshot
+	ChangesSincePrevious int64
+
+	// Storage used since the previous snapshot
+	StorageUsedSincePrevious uint64
+
+	// Time since the previous snapshot
+	TimeSincePrevious time.Duration
+}
+
+// SnapshotOverhead contains information about snapshot storage overhead
+type SnapshotOverhead struct {
+	// Total space used by all snapshots
+	TotalSnapshotSpace uint64
+
+	// Space used by the current volume state
+	CurrentVolumeSpace uint64
+
+	// Overhead percentage
+	OverheadPercentage float64
+
+	// Space that could be reclaimed by deleting all snapshots
+	ReclaimableSpace uint64
+}

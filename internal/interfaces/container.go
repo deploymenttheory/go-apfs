@@ -51,6 +51,21 @@ type ContainerSuperblockReader interface {
 
 	// MediaKeyLocation returns the wrapped media key location
 	MediaKeyLocation() types.Prange
+
+	// BlockedOutRange returns the blocked-out physical address range
+	BlockedOutRange() types.Prange
+
+	// EvictMappingTreeOID returns the object identifier of the evict-mapping tree
+	EvictMappingTreeOID() types.OidT
+
+	// TestType returns the container's test type for debugging
+	TestType() uint32
+
+	// TestOID returns the test object identifier for debugging
+	TestOID() types.OidT
+
+	// NewestMountedVersion returns the newest version of APFS that has mounted this container
+	NewestMountedVersion() uint64
 }
 
 // ContainerFeatureManager provides methods for managing container features
@@ -242,4 +257,8 @@ type ContainerManager interface {
 	// Health and Integrity
 	CheckIntegrity() (bool, []string)
 	IsHealthy() bool
+
+	// Object Map Operations
+	GetObjectMap() (ObjectMapReader, error)
+	ResolveVirtualObject(oid types.OidT, xid types.XidT) (types.Paddr, error)
 }

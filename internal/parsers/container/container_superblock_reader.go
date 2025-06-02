@@ -237,3 +237,28 @@ func (csr *containerSuperblockReader) KeylockerLocation() types.Prange {
 func (csr *containerSuperblockReader) MediaKeyLocation() types.Prange {
 	return csr.superblock.NxMkbLocker
 }
+
+// BlockedOutRange returns the blocked-out physical address range
+func (csr *containerSuperblockReader) BlockedOutRange() types.Prange {
+	return csr.superblock.NxBlockedOutPrange
+}
+
+// EvictMappingTreeOID returns the object identifier of the evict-mapping tree
+func (csr *containerSuperblockReader) EvictMappingTreeOID() types.OidT {
+	return csr.superblock.NxEvictMappingTreeOid
+}
+
+// TestType returns the container's test type for debugging
+func (csr *containerSuperblockReader) TestType() uint32 {
+	return csr.superblock.NxTestType
+}
+
+// TestOID returns the test object identifier for debugging
+func (csr *containerSuperblockReader) TestOID() types.OidT {
+	return csr.superblock.NxTestOid
+}
+
+// NewestMountedVersion returns the newest version of APFS that has mounted this container
+func (csr *containerSuperblockReader) NewestMountedVersion() uint64 {
+	return csr.superblock.NxNewestMountedVersion
+}
