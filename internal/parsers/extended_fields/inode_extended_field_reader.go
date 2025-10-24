@@ -32,7 +32,7 @@ func (r *InodeExtendedFieldReader) PreviousFileSize() (uint64, bool) {
 
 func (r *InodeExtendedFieldReader) FinderInfo() ([]byte, bool) {
 	for _, f := range r.fields {
-		if f.Type() == 2 {
+		if f.Type() == int(types.JObjTypeExtent) {
 			return f.Data(), true
 		}
 	}

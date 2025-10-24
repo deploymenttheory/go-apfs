@@ -443,44 +443,6 @@ const ApfsSupportedIncompatMask uint64 = ApfsIncompatCaseInsensitive |
 	ApfsIncompatSealedVolume |
 	ApfsIncompatReserved40
 
-// Inode Numbers (page 96)
-
-// InvalidInoNum is an invalid inode number.
-// Reference: page 96
-const InvalidInoNum uint64 = 0
-
-// RootDirParent is the inode number for the root directory's parent.
-// Reference: page 96
-// This is a sentinel value; there's no inode on disk with this inode number.
-const RootDirParent uint64 = 1
-
-// RootDirInoNum is the inode number for the root directory of the volume.
-// Reference: page 96
-const RootDirInoNum uint64 = 2
-
-// PrivDirInoNum is the inode number for the private directory.
-// Reference: page 96
-// The private directory's filename is "private-dir". When creating a new volume,
-// you must create a directory with this name and inode number.
-const PrivDirInoNum uint64 = 3
-
-// SnapDirInoNum is the inode number for the directory where snapshot metadata is stored.
-// Reference: page 97
-// Snapshot inodes are stored in the snapshot metedata tree.
-const SnapDirInoNum uint64 = 6
-
-// PurgeableDirInoNum is the inode number used for storing references to purgeable files.
-// Reference: page 97
-// This inode number and the directory records that use it are reserved.
-// Other implementations of the Apple File System must not modify them.
-// There isn't an actual directory with this inode number.
-const PurgeableDirInoNum uint64 = 7
-
-// MinUserInoNum is the smallest inode number available for user content.
-// Reference: page 97
-// All inode numbers less than this value are reserved.
-const MinUserInoNum uint64 = 16
-
 // UnifiedIdSpaceMark is the smallest inode number used by the system volume in a volume group.
 // Reference: page 97
 const UnifiedIdSpaceMark uint64 = 0x0800000000000000

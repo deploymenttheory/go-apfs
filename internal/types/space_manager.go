@@ -130,6 +130,9 @@ type SpacemanDeviceT struct {
 
 	// Reserved.
 	SmReserved2 uint64
+
+	// The object identifier of the root chunk-info address block.
+	SmCabOid OidT
 }
 
 // SpacemanAllocationZoneBoundariesT defines the boundaries of an allocation zone.
