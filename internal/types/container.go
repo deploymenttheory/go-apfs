@@ -110,7 +110,7 @@ type NxSuperblockT struct {
 // This magic number was chosen because in hex dumps it appears as "NXSB",
 // which is an abbreviated form of NX superblock.
 // Reference: page 35
-const NxMagic uint32 = 'B' | 'S'<<8 | 'X'<<16 | 'N'<<24 // 'BSXN'
+const NxMagic uint32 = 'N' | 'X'<<8 | 'S'<<16 | 'B'<<24 // 'BSXN'
 
 // NxEphInfoCount is the length of the array in the nx_ephemeral_info field.
 // Reference: page 35
