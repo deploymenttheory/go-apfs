@@ -171,8 +171,8 @@ func (ir *inodeReader) Mode() types.ModeT {
 }
 
 func (ir *inodeReader) IsDirectory() bool {
-	// Check mode bits for directory flag (S_IFDIR = 0x4000)
-	return ir.value.Mode&0x4000 != 0
+	// Check mode bits for directory flag
+	return ir.value.Mode&types.ModeT(types.ModeIFDIR) != 0
 }
 
 func (ir *inodeReader) NumberOfChildren() int32 {

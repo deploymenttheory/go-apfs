@@ -25,52 +25,79 @@ type SnapshotReader interface {
 	UUID() types.UUID
 }
 
-// SnapshotMetadataReader provides detailed metadata about a snapshot
-type SnapshotMetadataReader interface {
-	// ExtentReferenceTreeOID returns the physical object identifier of the extent reference tree
-	ExtentReferenceTreeOID() types.OidT
+// SnapMetadataReader provides methods for reading snapshot metadata records.
+type SnapMetadataReader interface {
+	// ExtentRefTreeOID returns the physical object identifier of the B-tree that stores extents information.
+	ExtentRefTreeOID() uint64
 
-	// SuperblockOID returns the physical object identifier of the volume superblock
-	SuperblockOID() types.OidT
+	// SuperblockOID returns the physical object identifier of the volume superblock.
+	SuperblockOID() uint64
 
-	// ExtentReferenceTreeType returns the type of the extent reference tree
-	ExtentReferenceTreeType() uint32
+	// CreateTime returns the time the snapshot was created.
+	CreateTime() time.Time
 
-	// Flags returns the snapshot metadata flags
-	Flags() types.SnapMetaFlags
+	// ChangeTime returns the last time the snapshot was modified.
+	ChangeTime() time.Time
 
-	// IsPendingDataless checks if the snapshot is pending being made dataless
-	IsPendingDataless() bool
+	// InodeNumber returns the inode number associated with the snapshot.
+	InodeNumber() uint64
 
-	// IsMergeInProgress checks if a merge is in progress for this snapshot
-	IsMergeInProgress() bool
+	// ExtentRefTreeType returns the type of the B-tree that stores extents information.
+	ExtentRefTreeType() uint32
+
+	// Flags returns the snapshot metadata flags.
+	Flags() uint32
+
+	// Name returns the snapshot's name.
+	Name() string
+
+	// HasFlag checks if a specific flag is set.
+	HasFlag(flag uint32) bool
 }
 
-// SnapshotExtendedMetadataReader provides additional extended metadata about a snapshot
-type SnapshotExtendedMetadataReader interface {
-	// Version returns the version of the extended metadata structure
+// SnapNameReader provides methods for reading snapshot name records.
+type SnapNameReader interface {
+	// Name returns the snapshot's name.
+	Name() string
+
+	// SnapXID returns the last transaction identifier included in the snapshot.
+	SnapXID() uint64
+}
+
+// SnapMetaExtReader provides methods for reading extended snapshot metadata.
+type SnapMetaExtReader interface {
+	// Version returns the version of the extended metadata structure.
 	Version() uint32
 
-	// ExtendedFlags returns the extended metadata flags
-	ExtendedFlags() uint32
+	// Flags returns the extended metadata flags.
+	Flags() uint32
 
-	// Token returns the opaque metadata token
+	// SnapXID returns the snapshot's transaction identifier.
+	SnapXID() uint64
+
+	// UUID returns the snapshot's UUID.
+	UUID() [16]byte
+
+	// Token returns the opaque metadata token.
 	Token() uint64
 }
 
-// SnapshotManager provides methods for managing and querying snapshots
+// SnapshotManager provides methods for managing and querying snapshot metadata.
 type SnapshotManager interface {
-	// ListSnapshots returns all snapshots for a volume
-	ListSnapshots() ([]SnapshotReader, error)
+	// GetSnapshotMetadata retrieves metadata for a snapshot by transaction ID.
+	GetSnapshotMetadata(xid uint64) (SnapMetadataReader, error)
 
-	// FindSnapshotByName finds a snapshot by its name
-	FindSnapshotByName(name string) (SnapshotReader, error)
+	// GetSnapshotByName finds a snapshot by name.
+	GetSnapshotByName(name string) (SnapMetadataReader, error)
 
-	// FindSnapshotByUUID finds a snapshot by its UUID
-	FindSnapshotByUUID(uuid types.UUID) (SnapshotReader, error)
+	// ListSnapshots returns all available snapshots.
+	ListSnapshots() ([]SnapMetadataReader, error)
 
-	// FindSnapshotByTransactionID finds a snapshot by its transaction ID
-	FindSnapshotByTransactionID(xid types.XidT) (SnapshotReader, error)
+	// CountSnapshots returns the total number of snapshots.
+	CountSnapshots() (int, error)
+
+	// GetSnapshotExtendedMetadata retrieves extended metadata for a snapshot.
+	GetSnapshotExtendedMetadata(xid uint64) (SnapMetaExtReader, error)
 }
 
 // SnapshotRestoreManager provides methods for snapshot restoration

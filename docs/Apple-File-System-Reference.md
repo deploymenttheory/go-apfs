@@ -1542,6 +1542,260 @@ Reserved.
 ```
 Don't set this flag, but preserve it if it's already set.
 
+# Snapshot Metadata
+
+Snapshots let you get a stable, read-only copy of the filesystem at a given point in time — for example, while updating a
+backup of the entire drive. Snapshots are designed to be fast and inexpensive to create; however, deleting a snapshot
+involves more work.
+
+## j_snap_metadata_key_t
+
+The key half of a record containing metadata about a snapshot.
+
+```c
+struct j_snap_metadata_key {
+    j_key_t hdr;
+} __attribute__((packed));
+typedef struct j_snap_metadata_key j_snap_metadata_key_t;
+```
+
+### Fields
+
+#### hdr
+The record's header.
+```c
+j_key_t hdr;
+```
+The object identifier in the header is the snapshot's transaction identifier. The type in the header is always `APFS_TYPE_SNAP_METADATA`.
+
+## j_snap_metadata_val_t
+
+The value half of a record containing metadata about a snapshot.
+
+```c
+struct j_snap_metadata_val {
+    oid_t extentref_tree_oid;
+    oid_t sblock_oid;
+    uint64_t create_time;
+    uint64_t change_time;
+    uint64_t inum;
+    uint32_t extentref_tree_type;
+    uint32_t flags;
+    uint16_t name_len;
+    uint8_t name[0];
+} __attribute__((packed));
+typedef struct j_snap_metadata_val j_snap_metadata_val_t;
+```
+
+### Fields
+
+#### extentref_tree_oid
+The physical object identifier of the B-tree that stores extents information.
+```c
+oid_t extentref_tree_oid;
+```
+
+#### sblock_oid
+The physical object identifier of the volume superblock.
+```c
+oid_t sblock_oid;
+```
+
+#### create_time
+The time that this snapshot was created.
+```c
+uint64_t create_time;
+```
+This timestamp is represented as the number of nanoseconds since January 1, 1970 at 000 UTC, disregarding leap seconds.
+
+#### change_time
+The time that this snapshot was last modified.
+```c
+uint64_t change_time;
+```
+This timestamp is represented as the number of nanoseconds since January 1, 1970 at 000 UTC, disregarding leap seconds.
+
+#### inum
+The inode number associated with this snapshot.
+```c
+uint64_t inum;
+```
+
+#### extentref_tree_type
+The type of the B-tree that stores extents information.
+```c
+uint32_t extentref_tree_type;
+```
+
+#### flags
+A bit field that contains additional information about a snapshot metadata record.
+```c
+uint32_t flags;
+```
+For the values used in this bit field, see `snap_meta_flags`.
+
+#### name_len
+The length of the snapshot's name, including the final null character (U+0000).
+```c
+uint16_t name_len;
+```
+
+#### name
+The snapshot's name, represented as a null-terminated UTF-8 string.
+```c
+uint8_t name[0];
+```
+
+## j_snap_name_key_t
+
+The key half of a snapshot name record.
+
+```c
+struct j_snap_name_key {
+    j_key_t hdr;
+    uint16_t name_len;
+    uint8_t name[0];
+} __attribute__((packed));
+typedef struct j_snap_name_key j_snap_name_key_t;
+```
+
+### Fields
+
+#### hdr
+The record's header.
+```c
+j_key_t hdr;
+```
+The object identifier in the header is always ~0ULL. The type in the header is always `APFS_TYPE_SNAP_NAME`.
+
+#### name_len
+The length of the snapshot's name, including the final null character (U+0000).
+```c
+uint16_t name_len;
+```
+
+#### name
+The snapshot's name, represented as a null-terminated UTF-8 string.
+```c
+uint8_t name[0];
+```
+
+## j_snap_name_val_t
+
+The value half of a snapshot name record.
+
+```c
+struct j_snap_name_val {
+    xid_t snap_xid;
+} __attribute__((packed));
+typedef struct j_snap_name_val j_snap_name_val_t;
+```
+
+### Fields
+
+#### snap_xid
+The last transaction identifier included in the snapshot.
+```c
+xid_t snap_xid;
+```
+
+## snap_meta_flags
+
+Bit flags for snapshot metadata records.
+
+```c
+typedef enum {
+    SNAP_META_PENDING_DATALESS = 0x00000001,
+    SNAP_META_MERGE_IN_PROGRESS = 0x00000002,
+} snap_meta_flags;
+```
+
+### Flag Values
+
+#### SNAP_META_PENDING_DATALESS
+Indicates that the snapshot is pending dataless operation.
+```c
+SNAP_META_PENDING_DATALESS = 0x00000001
+```
+
+#### SNAP_META_MERGE_IN_PROGRESS
+Indicates that a merge operation is in progress for this snapshot.
+```c
+SNAP_META_MERGE_IN_PROGRESS = 0x00000002
+```
+
+## snap_meta_ext_obj_phys_t
+
+Additional metadata about snapshots.
+
+```c
+struct snap_meta_ext_obj_phys {
+    obj_phys_t smeop_o;
+    snap_meta_ext_t smeop_sme;
+} __attribute__((packed));
+typedef struct snap_meta_ext_obj_phys_t snap_meta_ext_obj_phys_t;
+```
+
+### Fields
+
+#### smeop_o
+The physical object header.
+```c
+obj_phys_t smeop_o;
+```
+
+#### smeop_sme
+The snapshot metadata extension.
+```c
+snap_meta_ext_t smeop_sme;
+```
+
+## snap_meta_ext_t
+
+Extended metadata for snapshots.
+
+```c
+typedef struct snap_meta_ext {
+    uint32_t sme_version;
+    uint32_t sme_flags;
+    xid_t sme_snap_xid;
+    uuid_t sme_uuid;
+    uint64_t sme_token;
+} __attribute__((packed)) snap_meta_ext_t;
+```
+
+### Fields
+
+#### sme_version
+The version of this structure.
+```c
+uint32_t sme_version;
+```
+
+#### sme_flags
+Flags for this snapshot metadata extension.
+```c
+uint32_t sme_flags;
+```
+
+#### sme_snap_xid
+The snapshot's transaction identifier.
+```c
+xid_t sme_snap_xid;
+```
+
+#### sme_uuid
+The snapshot's UUID.
+```c
+uuid_t sme_uuid;
+```
+
+#### sme_token
+Opaque metadata token.
+```c
+uint64_t sme_token;
+```
+
 # B-Trees
 
 The B-trees used in Apple File System are implemented using the `btree_node_phys_t` structure to represent a node. The same structure is used for all nodes in a tree. Within a node, storage is divided into several areas:
@@ -2763,6 +3017,7 @@ Reserved.
 KB_TAG_RESERVED_F8 = 0xF8
 ```
 Don't create keybag entries with this tag, but preserve any existing entries.
+
 # Sealed Volumes
 
 Sealed volumes contain a hash of their file system, which can be compared to their current content to determine whether the volume has been modified after it was sealed, or compared to a known value to determine whether the volume contains the expected content. On a sealed volume, all of the following must be true:
@@ -4775,7 +5030,11 @@ ER_64KiB_BLOCKSIZE = 6
 ### ER_CUR_CHECKSUM_COUNT_MASK
 ```c
 #define ER_CUR_CHECKSUM_COUNT_MASK 0x0000FFFF
-```def struct er_state_phys er_state_phys_t;
+```
+
+### er_state_phys_t
+```c
+#define er_state_phys er_state_phys_t;
 ```
 
 # Fusion
