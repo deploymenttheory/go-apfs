@@ -1,0 +1,22 @@
+# APFS Configuration
+auto_detect_apfs: true
+default_offset: 20480  # Common GPT offset (block 40 * 512)
+cache_enabled: true
+cache_size: 100
+test_data_path: "../../tests"
+
+# Logging configuration
+log_level: "debug"
+log_format: "json"
+
+# B-tree service settings
+btree:
+  max_depth: 20
+  cache_nodes: true
+  debug_parsing: true
+
+# DMG handling
+dmg:
+  verify_checksums: true
+  auto_mount: false
+  temp_extract: true

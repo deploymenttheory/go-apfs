@@ -28,12 +28,32 @@ func NewVolumeService(container *ContainerReader, volumeOID types.OidT) (*Volume
 		return nil, fmt.Errorf("invalid volume OID: 0")
 	}
 
-	// APFS volume OIDs from container superblock are VIRTUAL object identifiers
+	// APFS volume OIDs from container superblock are typically VIRTUAL object identifiers
 	// They need to be resolved through the object map to get the physical address
+	// However, in freshly created volumes, the object map may be empty, so we try different approaches
 	resolver := NewBTreeObjectResolver(container)
 	physicalAddr, err := resolver.ResolveVirtualObject(volumeOID, container.GetSuperblock().NxNextXid-1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve volume OID %d using B-tree object map: %w", volumeOID, err)
+		// Fallback 1: try treating volumeOID as a direct physical address
+		physicalAddr = types.Paddr(volumeOID)
+		
+		// Fallback 2: if that fails, scan for volume superblock near container structures
+		volSBData, readErr := container.ReadBlock(uint64(physicalAddr))
+		if readErr != nil || !isValidVolumeSuperblock(volSBData) {
+			// Scan some blocks after the container for the volume superblock
+			found := false
+			for scanBlock := uint64(1); scanBlock < 50; scanBlock++ {
+				scanData, scanErr := container.ReadBlock(scanBlock)
+				if scanErr == nil && isValidVolumeSuperblock(scanData) {
+					physicalAddr = types.Paddr(scanBlock)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("failed to locate volume superblock for OID %d", volumeOID)
+			}
+		}
 	}
 
 	// Read volume superblock from resolved physical address
@@ -56,6 +76,52 @@ func NewVolumeService(container *ContainerReader, volumeOID types.OidT) (*Volume
 	vs := &VolumeServiceImpl{
 		container: container,
 		volumeOID: volumeOID,
+		volumeSB:  volSB,
+	}
+
+	return vs, nil
+}
+
+// isValidVolumeSuperblock checks if a block contains a valid APFS volume superblock
+func isValidVolumeSuperblock(data []byte) bool {
+	if len(data) < 36 {
+		return false
+	}
+	// Check for APFS volume superblock magic "APSB" (0x42535041)
+	magic := uint32(data[32]) | uint32(data[33])<<8 | uint32(data[34])<<16 | uint32(data[35])<<24
+	return magic == 0x42535041
+}
+
+// NewVolumeServiceFromPhysicalOID creates a VolumeService using a direct physical OID (bypassing object map)
+func NewVolumeServiceFromPhysicalOID(container *ContainerReader, physicalOID types.OidT) (*VolumeServiceImpl, error) {
+	if container == nil {
+		return nil, fmt.Errorf("container reader cannot be nil")
+	}
+
+	if physicalOID == 0 {
+		return nil, fmt.Errorf("invalid physical OID: 0")
+	}
+
+	// Read volume superblock directly from physical address
+	volSBData, err := container.ReadBlock(uint64(physicalOID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read volume superblock at physical address %d: %w", physicalOID, err)
+	}
+
+	// Parse volume superblock using the volume superblock reader
+	volSBReader, err := volumes.NewVolumeSuperblockReader(volSBData, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse volume superblock: %w", err)
+	}
+
+	volSB := volSBReader.GetSuperblock()
+	if volSB == nil {
+		return nil, fmt.Errorf("failed to extract superblock")
+	}
+
+	vs := &VolumeServiceImpl{
+		container: container,
+		volumeOID: physicalOID,
 		volumeSB:  volSB,
 	}
 

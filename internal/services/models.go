@@ -167,3 +167,5 @@ type DiffReport struct {
 	DataAdded     uint64
 	DataRemoved   uint64
 }
+
+// FileEntry is exported in filesystem_service.go

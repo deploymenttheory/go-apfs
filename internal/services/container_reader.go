@@ -14,6 +14,7 @@ import (
 // ContainerReader provides low-level access to container data
 type ContainerReader struct {
 	file             *os.File
+	device           io.ReaderAt // Alternative to file for devices
 	superblock       *types.NxSuperblockT
 	blockSize        uint32
 	containerSize    uint64
@@ -85,6 +86,55 @@ func NewContainerReader(filePath string) (*ContainerReader, error) {
 	return cr, nil
 }
 
+// NewContainerReaderFromDevice creates a ContainerReader from an io.ReaderAt device
+func NewContainerReaderFromDevice(device io.ReaderAt, size uint64) (*ContainerReader, error) {
+	if device == nil {
+		return nil, fmt.Errorf("device cannot be nil")
+	}
+
+	// Read the container superblock (at block 0)
+	superblockData := make([]byte, 4096)
+	_, err := device.ReadAt(superblockData, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read superblock: %w", err)
+	}
+
+	// Parse the superblock using the same method as the file-based constructor
+	sbParser, err := container.NewContainerSuperblockReader(superblockData, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse superblock: %w", err)
+	}
+
+	// Build the superblock struct manually since we need the actual types.NxSuperblockT
+	superblock := &types.NxSuperblockT{
+		NxMagic:       sbParser.Magic(),
+		NxBlockSize:   sbParser.BlockSize(),
+		NxBlockCount:  sbParser.BlockCount(),
+		NxNextOid:     sbParser.NextObjectID(),
+		NxNextXid:     sbParser.NextTransactionID(),
+		NxSpacemanOid: sbParser.SpaceManagerOID(),
+		NxOmapOid:     sbParser.ObjectMapOID(),
+	}
+
+	// Copy volume OIDs
+	for i := 0; i < 100 && i < len(sbParser.VolumeOIDs()); i++ {
+		superblock.NxFsOid[i] = sbParser.VolumeOIDs()[i]
+	}
+
+	cr := &ContainerReader{
+		device:           device,
+		superblock:       superblock,
+		blockSize:        superblock.NxBlockSize,
+		containerSize:    size,
+		endianness:       binary.LittleEndian,
+		blockCache:       make(map[uint64][]byte),
+		maxCacheSize:     100,
+		currentCacheSize: 0,
+	}
+
+	return cr, nil
+}
+
 // ReadBlock reads a single block from the container
 func (cr *ContainerReader) ReadBlock(blockNumber uint64) ([]byte, error) {
 	cr.mu.RLock()
@@ -102,9 +152,19 @@ func (cr *ContainerReader) ReadBlock(blockNumber uint64) ([]byte, error) {
 		return nil, fmt.Errorf("block %d is beyond container size", blockNumber)
 	}
 
-	// Read the block
+	// Read the block from file or device
 	blockData := make([]byte, cr.blockSize)
-	n, err := cr.file.ReadAt(blockData, offset)
+	var n int
+	var err error
+	
+	if cr.file != nil {
+		n, err = cr.file.ReadAt(blockData, offset)
+	} else if cr.device != nil {
+		n, err = cr.device.ReadAt(blockData, offset)
+	} else {
+		return nil, fmt.Errorf("no file or device available for reading")
+	}
+	
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("failed to read block %d: %w", blockNumber, err)
 	}
@@ -217,11 +277,12 @@ func (cr *ContainerReader) IsCached(blockNumber uint64) bool {
 	return exists
 }
 
-// Close closes the container file
+// Close closes the container file or device
 func (cr *ContainerReader) Close() error {
 	if cr.file != nil {
 		return cr.file.Close()
 	}
+	// Device-based readers don't need explicit closing since we don't own the device
 	return nil
 }
 

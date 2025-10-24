@@ -47,8 +47,8 @@ func parseVolumeSuperblock(data []byte, endian binary.ByteOrder) (*types.ApfsSup
 
 	offset := 32
 
-	// Parse magic (validation)
-	sb.ApfsMagic = endian.Uint32(data[offset : offset+4])
+	// Parse magic (validation) - magic is always stored in big-endian format as ASCII bytes
+	sb.ApfsMagic = binary.BigEndian.Uint32(data[offset : offset+4])
 	if sb.ApfsMagic != types.ApfsMagic {
 		return nil, fmt.Errorf("invalid volume superblock magic: got 0x%08X, want 0x%08X", sb.ApfsMagic, types.ApfsMagic)
 	}

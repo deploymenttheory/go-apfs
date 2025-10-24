@@ -55,8 +55,18 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 		return btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
 	}
 
-	// This object map uses a B-tree - traverse it to find the mapping
+	// This object map uses a B-tree - first try manually managed, then B-tree if that fails
 	fmt.Printf("DEBUG: Object map uses B-tree at OID %d, searching for virtual OID %d\n", omap.OmTreeOid, virtualOID)
+	
+	// First try manually managed object map (in case B-tree is empty)
+	manualResult, err := btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
+	if err == nil {
+		fmt.Printf("DEBUG: Found mapping in manually managed section: %d\n", manualResult)
+		return manualResult, nil
+	}
+	
+	// If manual search failed, try B-tree approach
+	fmt.Printf("DEBUG: Manual search failed (%v), trying B-tree approach\n", err)
 	return btor.searchBTreeObjectMap(omap.OmTreeOid, virtualOID, transactionID)
 }
 
