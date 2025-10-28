@@ -156,7 +156,7 @@ func (cr *ContainerReader) ReadBlock(blockNumber uint64) ([]byte, error) {
 	blockData := make([]byte, cr.blockSize)
 	var n int
 	var err error
-	
+
 	if cr.file != nil {
 		n, err = cr.file.ReadAt(blockData, offset)
 	} else if cr.device != nil {
@@ -164,7 +164,7 @@ func (cr *ContainerReader) ReadBlock(blockNumber uint64) ([]byte, error) {
 	} else {
 		return nil, fmt.Errorf("no file or device available for reading")
 	}
-	
+
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("failed to read block %d: %w", blockNumber, err)
 	}
@@ -257,11 +257,11 @@ func (cr *ContainerReader) ClearCache() {
 }
 
 // GetCacheStats returns cache statistics
-func (cr *ContainerReader) GetCacheStats() map[string]interface{} {
+func (cr *ContainerReader) GetCacheStats() map[string]any {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"cached_blocks":    len(cr.blockCache),
 		"cache_size_bytes": cr.currentCacheSize,
 		"max_cache_bytes":  cr.maxCacheSize,

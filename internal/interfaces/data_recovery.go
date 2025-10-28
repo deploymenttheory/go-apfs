@@ -116,7 +116,7 @@ type RecoverableItem struct {
 	Condition ItemCondition
 
 	// Metadata about the item (if available)
-	Metadata map[string]interface{}
+	Metadata map[string]any
 
 	// Dependencies on other items for successful recovery
 	Dependencies []types.OidT

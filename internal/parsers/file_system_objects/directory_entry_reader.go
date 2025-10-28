@@ -12,13 +12,13 @@ import (
 
 // directoryEntryReader implements the DirectoryEntryReader interface
 type directoryEntryReader struct {
-	key   interface{} // Can be *types.JDrecKeyT or *types.JDrecHashedKeyT
+	key   any // Can be *types.JDrecKeyT or *types.JDrecHashedKeyT
 	value *types.JDrecValT
 }
 
 // NewDirectoryEntryReader creates a new directory entry reader
 func NewDirectoryEntryReader(keyData, valueData []byte, endian binary.ByteOrder, isHashed bool) (interfaces.DirectoryEntryReader, error) {
-	var key interface{}
+	var key any
 	var err error
 
 	if isHashed {

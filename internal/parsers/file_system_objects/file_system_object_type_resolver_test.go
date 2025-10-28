@@ -132,7 +132,7 @@ func TestFileSystemObjectTypeResolver_ComprehensiveMapping(t *testing.T) {
 
 func TestFileSystemObjectTypeResolver_Interface(t *testing.T) {
 	// Test that the type resolver properly implements the interface
-	var resolver interface{} = NewFileSystemObjectTypeResolver()
+	var resolver any = NewFileSystemObjectTypeResolver()
 
 	// This should compile without issues if the interface is properly implemented
 	if _, ok := resolver.(interfaces.FileSystemObjectTypeResolver); !ok {

@@ -314,7 +314,7 @@ type IntegrityIssue struct {
 	AffectedPath string
 
 	// Additional details about the issue
-	Details map[string]interface{}
+	Details map[string]any
 }
 
 // IntegrityIssueType represents the type of integrity issue

@@ -13,7 +13,7 @@ type FileSystemService interface {
 
 // ObjectLocatorService provides object discovery and analysis
 type ObjectLocatorService interface {
-	FindObjectByID(oid uint64) (interface{}, error)
+	FindObjectByID(oid uint64) (any, error)
 	ResolveObjectPath(oid uint64) ([]uint64, error)
 	IsObjectValid(oid uint64) (bool, error)
 	GetObjectDependencies(oid uint64) ([]uint64, error)
@@ -38,7 +38,7 @@ type SnapshotService interface {
 type VolumeService interface {
 	GetVolumeMetadata() (*VolumeReport, error)
 	GetSpaceUsageStats() (*SpaceStats, error)
-	AnalyzeVolumeFragmentation() (map[string]interface{}, error)
+	AnalyzeVolumeFragmentation() (map[string]any, error)
 	DetectCorruption() ([]VolumeCorruptionAnomaly, error)
 	GenerateVolumeReport() (*VolumeReport, error)
 	GetFileCount() (uint64, error)
@@ -62,11 +62,11 @@ type DataRecoveryService interface {
 type EncryptionService interface {
 	GetEncryptionStatus() (*EncryptionState, error)
 	VerifyEncryptionConsistency() (bool, []string, error)
-	AnalyzeKeyRolling() (map[string]interface{}, error)
-	CheckProtectionClasses() (map[string]interface{}, error)
+	AnalyzeKeyRolling() (map[string]any, error)
+	CheckProtectionClasses() (map[string]any, error)
 	ValidateEncryptionMetadata() (bool, []string, error)
 	IsFileEncrypted(inode uint64) (bool, error)
-	GetEncryptionKeys() (map[string]interface{}, error)
+	GetEncryptionKeys() (map[string]any, error)
 	VerifyFileEncryption(inode uint64) (bool, error)
 }
 
@@ -78,6 +78,6 @@ type CacheService interface {
 	CacheObjectMap() error
 	PrefetchFrequentObjects() error
 	ClearCache() error
-	GetCacheStats() (map[string]interface{}, error)
+	GetCacheStats() (map[string]any, error)
 	IsCached(oid uint64) bool
 }

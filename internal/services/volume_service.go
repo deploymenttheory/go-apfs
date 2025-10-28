@@ -208,7 +208,7 @@ func (vs *VolumeServiceImpl) GetSpaceUsageStats() (*SpaceStats, error) {
 }
 
 // AnalyzeVolumeFragmentation analyzes the filesystem fragmentation
-func (vs *VolumeServiceImpl) AnalyzeVolumeFragmentation() (map[string]interface{}, error) {
+func (vs *VolumeServiceImpl) AnalyzeVolumeFragmentation() (map[string]any, error) {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()
 
@@ -217,7 +217,7 @@ func (vs *VolumeServiceImpl) AnalyzeVolumeFragmentation() (map[string]interface{
 	}
 
 	// TODO: Implement fragmentation analysis using space manager
-	result := map[string]interface{}{
+	result := map[string]any{
 		"status":                "not_implemented",
 		"fragmentation_ratio":   0.0,
 		"contiguous_extents":    0,

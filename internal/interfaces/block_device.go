@@ -213,7 +213,7 @@ type BlockDeviceIssue struct {
 	AffectedBlock types.Paddr
 
 	// Additional details
-	Details map[string]interface{}
+	Details map[string]any
 }
 
 // BlockDeviceIssueType represents the type of device issue

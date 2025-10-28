@@ -12,7 +12,7 @@ type ObjectLocatorServiceImpl struct {
 	container *ContainerReader
 	resolver  *BTreeObjectResolver
 	mu        sync.RWMutex
-	cache     map[types.OidT]interface{} // Cache for discovered objects
+	cache     map[types.OidT]any // Cache for discovered objects
 }
 
 // NewObjectLocatorService creates a new ObjectLocatorService instance
@@ -20,12 +20,12 @@ func NewObjectLocatorService(container *ContainerReader) *ObjectLocatorServiceIm
 	return &ObjectLocatorServiceImpl{
 		container: container,
 		resolver:  NewBTreeObjectResolver(container),
-		cache:     make(map[types.OidT]interface{}),
+		cache:     make(map[types.OidT]any),
 	}
 }
 
 // FindObjectByID locates an object in the container by its OID
-func (ols *ObjectLocatorServiceImpl) FindObjectByID(oid uint64) (interface{}, error) {
+func (ols *ObjectLocatorServiceImpl) FindObjectByID(oid uint64) (any, error) {
 	ols.mu.RLock()
 	if cached, exists := ols.cache[types.OidT(oid)]; exists {
 		ols.mu.RUnlock()

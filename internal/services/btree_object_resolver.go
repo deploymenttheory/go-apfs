@@ -163,7 +163,7 @@ func (btor *BTreeObjectResolver) searchBTreeObjectMap(treeOID types.OidT, virtua
 }
 
 // searchBTreeNode recursively searches a B-tree node for an object mapping
-func (btor *BTreeObjectResolver) searchBTreeNode(nodeReader interface{}, searchKey types.OmapKeyT) (types.Paddr, error) {
+func (btor *BTreeObjectResolver) searchBTreeNode(nodeReader any, searchKey types.OmapKeyT) (types.Paddr, error) {
 	// Cast the interface to the actual B-tree node reader
 	node, ok := nodeReader.(interfaces.BTreeNodeReader)
 	if !ok {

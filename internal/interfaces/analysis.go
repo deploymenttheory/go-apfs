@@ -717,10 +717,10 @@ type ContainerDifference struct {
 	Component string
 
 	// Value in first container
-	Value1 interface{}
+	Value1 any
 
 	// Value in second container
-	Value2 interface{}
+	Value2 any
 
 	// Description of the difference
 	Description string
@@ -735,10 +735,10 @@ type VolumeDifference struct {
 	Component string
 
 	// Value in first volume
-	Value1 interface{}
+	Value1 any
 
 	// Value in second volume
-	Value2 interface{}
+	Value2 any
 
 	// Description of the difference
 	Description string
@@ -830,7 +830,7 @@ type AnalysisReport struct {
 	RecommendationsSummary string
 
 	// Raw data (if requested)
-	RawData map[string]interface{}
+	RawData map[string]any
 }
 
 // ReportMetadata contains metadata about the analysis report

@@ -218,7 +218,7 @@ type ObjectTransactionManager interface {
 	RollbackTransaction(xid types.XidT) error
 
 	// GetObjectAtTransaction gets an object as it existed at a specific transaction
-	GetObjectAtTransaction(id types.OidT, xid types.XidT) (interface{}, error)
+	GetObjectAtTransaction(id types.OidT, xid types.XidT) (any, error)
 }
 
 // ObjectListManager provides methods for managing ordered collections of objects

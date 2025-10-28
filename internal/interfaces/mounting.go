@@ -174,7 +174,7 @@ type ImageValidationIssue struct {
 	ByteOffset uint64
 
 	// Additional details
-	Details map[string]interface{}
+	Details map[string]any
 }
 
 // ImageValidationIssueType represents the type of image validation issue
