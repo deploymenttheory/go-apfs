@@ -1151,7 +1151,7 @@ func (fs *FileSystemServiceImpl) ReadFileRange(inodeID uint64, offset, length ui
 	currentLogicalOffset := uint64(0)
 
 	for _, extent := range extents {
-		extentLogicalEnd := currentLogicalOffset + extent.Length
+		extentLogicalEnd := currentLogicalOffset + extent.LogicalSize
 
 		// Check if this extent overlaps with our requested range
 		if extentLogicalEnd > offset && currentLogicalOffset < offset+length {
@@ -1161,7 +1161,7 @@ func (fs *FileSystemServiceImpl) ReadFileRange(inodeID uint64, offset, length ui
 				readStartInExtent = offset - currentLogicalOffset
 			}
 
-			readEndInExtent := extent.Length
+			readEndInExtent := extent.LogicalSize
 			if offset+length < extentLogicalEnd {
 				readEndInExtent = offset + length - currentLogicalOffset
 			}
@@ -1169,9 +1169,9 @@ func (fs *FileSystemServiceImpl) ReadFileRange(inodeID uint64, offset, length ui
 			bytesToRead := readEndInExtent - readStartInExtent
 
 			// Read from the physical location
-			physicalOffset := extent.PhysicalAddress + readStartInExtent
-			blockOffset := physicalOffset / uint64(fs.container.BlockSize())
-			blockInternalOffset := physicalOffset % uint64(fs.container.BlockSize())
+			physicalOffset := extent.PhysicalBlock*uint64(fs.container.GetBlockSize()) + readStartInExtent
+			blockOffset := physicalOffset / uint64(fs.container.GetBlockSize())
+			blockInternalOffset := physicalOffset % uint64(fs.container.GetBlockSize())
 
 			// Read blocks
 			var extentData []byte

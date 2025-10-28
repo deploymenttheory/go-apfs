@@ -169,3 +169,19 @@ type DiffReport struct {
 }
 
 // FileEntry is exported in filesystem_service.go
+
+// FileReaderAdapter describes an adapter for reading file data
+type FileReaderAdapter struct {
+	fs      *FileSystemServiceImpl
+	inodeID uint64
+	size    uint64
+	offset  uint64
+}
+
+// FileSeekerAdapter describes an adapter for seeking within a file
+type FileSeekerAdapter struct {
+	fs      *FileSystemServiceImpl
+	inodeID uint64
+	size    uint64
+	offset  uint64
+}

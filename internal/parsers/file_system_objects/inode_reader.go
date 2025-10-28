@@ -194,3 +194,7 @@ func (ir *inodeReader) HasResourceFork() bool {
 	// For now, returning false as placeholder
 	return false
 }
+
+func (ir *inodeReader) Size() uint64 {
+	return ir.value.UncompressedSize
+}

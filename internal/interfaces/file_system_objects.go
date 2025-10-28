@@ -64,6 +64,9 @@ type InodeReader interface {
 
 	// HasResourceFork checks if the inode has a resource fork
 	HasResourceFork() bool
+
+	// Size returns the file size
+	Size() uint64
 }
 
 // DirectoryEntryReader provides methods for reading directory entry information

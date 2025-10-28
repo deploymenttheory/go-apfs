@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to create comprehensive test APFS images for testing
-# Creates raw APFS volumes that can be read directly without decompression
+# Creates APFS volumes with populated object maps using UDRW (read/write) format for raw data access
 
 set -e
 
@@ -48,13 +48,13 @@ create_apfs_volume() {
 	echo "Creating: $name ($size)"
 	echo "=========================================="
 	
-	# Create a raw disk image file
+	# Create a sparse disk image
 	local disk_image="$TEMP_DIR/${name}.img"
 	
-	echo "1. Creating raw disk image ($size)..."
+	echo "1. Creating sparse disk image ($size)..."
 	hdiutil create -size "$size" -type SPARSE -fs APFS -volname "$name" -o "$disk_image"
 	
-	# The output is actually a .sparseimage file
+	# The output is a .sparseimage file
 	local sparse_image="${disk_image}.sparseimage"
 	if [ ! -f "$sparse_image" ]; then
 		echo "ERROR: Failed to create disk image"
@@ -62,7 +62,7 @@ create_apfs_volume() {
 	fi
 	
 	echo "2. Mounting volume..."
-	hdiutil attach "$sparse_image"
+	hdiutil attach "$sparse_image" >/dev/null 2>&1
 	sleep 3
 	
 	# Find the mounted volume
@@ -87,20 +87,26 @@ create_apfs_volume() {
 	sleep 2
 	
 	echo "6. Unmounting volume..."
-	hdiutil detach "$mount_point"
+	hdiutil detach "$mount_point" >/dev/null 2>&1
 	sleep 2
 	
-	# Extract raw APFS to file (skip partition table, get just the container)
-	echo "7. Extracting raw APFS container..."
+	# Convert sparse image to UDRW (read-write) format
+	# This preserves raw APFS structure with GPT and populated object maps
+	echo "7. Converting to UDRW format..."
+	local temp_udrw="${TEMP_DIR}/temp_udrw_$$"
 	
-	# The APFS partition with GPT typically starts at block 40 (20480 bytes / 512)
-	# We need to find where APFS actually starts by looking for the magic
-	# For UDRO format with GPT, APFS is usually at offset 1048576 (256 * 4096)
-	# But we'll extract the whole image and let offset detection handle it
-	
-	# For now, just copy the sparse image directly as the output
-	# Our offset detection will find the APFS container
-	cp "$sparse_image" "$output_file"
+	if hdiutil convert "$sparse_image" -format UDRW -o "$temp_udrw" >/dev/null 2>&1; then
+		if [ -f "${temp_udrw}.dmg" ]; then
+			cp "${temp_udrw}.dmg" "$output_file"
+			rm -f "${temp_udrw}.dmg"
+		else
+			echo "ERROR: UDRW conversion failed to create output file"
+			return 1
+		fi
+	else
+		echo "ERROR: Failed to convert to UDRW format"
+		return 1
+	fi
 	
 	# Clean up sparse image
 	rm -f "$sparse_image"
@@ -136,7 +142,7 @@ populate_populated() {
 		echo "Data file $i with some content to make it realistic" > "$mount_point/Data/data_$i.dat"
 	done
 	
-	ln -s "$mount_point/Documents/file_1.txt" "$mount_point/symlink_test.txt"
+	ln -s "$mount_point/Documents/file_1.txt" "$mount_point/symlink_test.txt" 2>/dev/null || true
 }
 
 populate_full() {
@@ -169,4 +175,4 @@ echo ""
 echo "Created test images:"
 ls -lh "$TESTS_DIR"/*.dmg 2>/dev/null || echo "ERROR: No DMG files found!"
 
-exit 0
+exit 0 
