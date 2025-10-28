@@ -32,6 +32,8 @@ type CheckpointCandidate struct {
 // FindLatestValidSuperblock implements the Apple APFS mounting procedure:
 // 1. Read block zero to get initial superblock
 // 2. Use nx_xp_desc_base to locate checkpoint descriptor area
+//    - If MSB is clear: descriptor area is contiguous (simple case)
+//    - If MSB is set: descriptor area is non-contiguous, requires B-tree parsing
 // 3. Read entries in checkpoint descriptor area (checkpoint_map_phys_t or nx_superblock_t)
 // 4. Find container superblock with largest XID that isn't malformed
 func (cds *CheckpointDiscoveryService) FindLatestValidSuperblock() (*CheckpointCandidate, error) {
@@ -41,25 +43,48 @@ func (cds *CheckpointDiscoveryService) FindLatestValidSuperblock() (*CheckpointC
 		return nil, fmt.Errorf("no container superblock available at block zero")
 	}
 
-	fmt.Printf("DEBUG: Block zero superblock - XID=%d, DescBase=%d, DescBlocks=%d\n", 
+	fmt.Printf("DEBUG: Block zero superblock - XID=%d, DescBase=0x%X, DescBlocks=%d\n",
 		blockZeroSB.NxNextXid, blockZeroSB.NxXpDescBase, blockZeroSB.NxXpDescBlocks)
 
 	// Step 2: Use nx_xp_desc_base to locate checkpoint descriptor area
-	descBase := uint64(blockZeroSB.NxXpDescBase)
+	// Check MSB of nx_xp_desc_base to determine if descriptor area is contiguous
+	descBaseRaw := uint64(blockZeroSB.NxXpDescBase)
 	descBlocks := blockZeroSB.NxXpDescBlocks & 0x7FFFFFFF // Clear high bit flag
-	
-	fmt.Printf("DEBUG: Scanning checkpoint descriptor area at block %d, %d blocks\n", descBase, descBlocks)
+
+	const msbMask uint64 = 0x8000000000000000
+	isNonContiguous := (descBaseRaw & msbMask) != 0
+
+	var blockRanges []blockRange
+	var err error
+
+	if isNonContiguous {
+		// MSB is set: LSBs contain B-Tree root node address
+		// The B-Tree maps logical offsets to physical block ranges (prange_t)
+		btreeRootAddr := descBaseRaw & ^msbMask // Clear MSB to get address
+		fmt.Printf("DEBUG: Non-contiguous descriptor area - B-tree root at block %d\n", btreeRootAddr)
+
+		blockRanges, err = cds.parseDescriptorAreaBTree(btreeRootAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse non-contiguous descriptor area B-tree: %w", err)
+		}
+		fmt.Printf("DEBUG: Found %d non-contiguous ranges for descriptor area\n", len(blockRanges))
+	} else {
+		// MSB is clear: descriptor area is contiguous
+		descBase := descBaseRaw
+		fmt.Printf("DEBUG: Contiguous descriptor area at block %d, %d blocks\n", descBase, descBlocks)
+		blockRanges = []blockRange{{start: descBase, count: uint64(descBlocks)}}
+	}
 
 	// Step 3: Read entries in checkpoint descriptor area
 	candidates := []*CheckpointCandidate{}
-	
+
 	// Add block zero candidate first
 	blockZeroCandidate := &CheckpointCandidate{
-		Superblock:   blockZeroSB,
+		Superblock:    blockZeroSB,
 		TransactionID: blockZeroSB.NxNextXid,
 		BlockAddress:  0,
-		IsValid:      cds.validateSuperblock(blockZeroSB),
-		ErrorMsg:     "",
+		IsValid:       cds.validateSuperblock(blockZeroSB),
+		ErrorMsg:      "",
 	}
 	if !blockZeroCandidate.IsValid {
 		blockZeroCandidate.ErrorMsg = "block zero superblock validation failed"
@@ -67,55 +92,58 @@ func (cds *CheckpointDiscoveryService) FindLatestValidSuperblock() (*CheckpointC
 	candidates = append(candidates, blockZeroCandidate)
 
 	// Scan checkpoint descriptor area for additional superblocks
-	for blockOffset := uint64(0); blockOffset < uint64(descBlocks); blockOffset++ {
-		blockAddr := descBase + blockOffset
-		
-		blockData, err := cds.container.ReadBlock(blockAddr)
-		if err != nil {
-			fmt.Printf("DEBUG: Failed to read checkpoint block %d: %v\n", blockAddr, err)
-			continue
-		}
+	// Iterate through all block ranges (contiguous or non-contiguous)
+	for _, brange := range blockRanges {
+		for blockOffset := uint64(0); blockOffset < brange.count; blockOffset++ {
+			blockAddr := brange.start + blockOffset
 
-		if len(blockData) < 32 {
-			continue
-		}
-
-		// Check if this block contains a container superblock
-		if cds.isSuperblock(blockData) {
-			sb, err := cds.parseSuperblock(blockData)
+			blockData, err := cds.container.ReadBlock(blockAddr)
 			if err != nil {
-				fmt.Printf("DEBUG: Failed to parse superblock at block %d: %v\n", blockAddr, err)
-				candidate := &CheckpointCandidate{
-					Superblock:   nil,
-					TransactionID: 0,
-					BlockAddress:  blockAddr,
-					IsValid:      false,
-					ErrorMsg:     fmt.Sprintf("parse error: %v", err),
-				}
-				candidates = append(candidates, candidate)
+				fmt.Printf("DEBUG: Failed to read checkpoint block %d: %v\n", blockAddr, err)
 				continue
 			}
 
-			isValid := cds.validateSuperblock(sb)
-			candidate := &CheckpointCandidate{
-				Superblock:   sb,
-				TransactionID: sb.NxNextXid,
-				BlockAddress:  blockAddr,
-				IsValid:      isValid,
-				ErrorMsg:     "",
+			if len(blockData) < 32 {
+				continue
 			}
-			if !isValid {
-				candidate.ErrorMsg = "superblock validation failed"
+
+			// Check if this block contains a container superblock
+			if cds.isSuperblock(blockData) {
+				sb, err := cds.parseSuperblock(blockData)
+				if err != nil {
+					fmt.Printf("DEBUG: Failed to parse superblock at block %d: %v\n", blockAddr, err)
+					candidate := &CheckpointCandidate{
+						Superblock:    nil,
+						TransactionID: 0,
+						BlockAddress:  blockAddr,
+						IsValid:       false,
+						ErrorMsg:      fmt.Sprintf("parse error: %v", err),
+					}
+					candidates = append(candidates, candidate)
+					continue
+				}
+
+				isValid := cds.validateSuperblock(sb)
+				candidate := &CheckpointCandidate{
+					Superblock:    sb,
+					TransactionID: sb.NxNextXid,
+					BlockAddress:  blockAddr,
+					IsValid:       isValid,
+					ErrorMsg:      "",
+				}
+				if !isValid {
+					candidate.ErrorMsg = "superblock validation failed"
+				}
+
+				fmt.Printf("DEBUG: Found superblock at block %d - XID=%d, Valid=%t\n",
+					blockAddr, sb.NxNextXid, isValid)
+				candidates = append(candidates, candidate)
+			} else {
+				// This might be a checkpoint_map_phys_t - we could parse these too
+				// but for now we're focused on finding superblocks
+				fmt.Printf("DEBUG: Block %d is not a superblock (type=0x%08X)\n",
+					blockAddr, binary.LittleEndian.Uint32(blockData[24:28]))
 			}
-			
-			fmt.Printf("DEBUG: Found superblock at block %d - XID=%d, Valid=%t\n", 
-				blockAddr, sb.NxNextXid, isValid)
-			candidates = append(candidates, candidate)
-		} else {
-			// This might be a checkpoint_map_phys_t - we could parse these too
-			// but for now we're focused on finding superblocks
-			fmt.Printf("DEBUG: Block %d is not a superblock (type=0x%08X)\n", 
-				blockAddr, binary.LittleEndian.Uint32(blockData[24:28]))
 		}
 	}
 
@@ -241,6 +269,56 @@ func (cds *CheckpointDiscoveryService) GetCandidates() ([]*CheckpointCandidate, 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return []*CheckpointCandidate{latest}, nil
+}
+
+// blockRange represents a contiguous range of blocks
+type blockRange struct {
+	start uint64 // Starting block address
+	count uint64 // Number of blocks in range
+}
+
+// parseDescriptorAreaBTree parses the B-tree that maps logical offsets to physical block ranges
+// This B-tree is used when the checkpoint descriptor area is non-contiguous (MSB of nx_xp_desc_base is set)
+// The B-tree maps uint64_t logical offsets to prange_t physical block ranges
+func (cds *CheckpointDiscoveryService) parseDescriptorAreaBTree(btreeRootAddr uint64) ([]blockRange, error) {
+	// Read the B-tree root node
+	rootData, err := cds.container.ReadBlock(btreeRootAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read B-tree root node at block %d: %w", btreeRootAddr, err)
+	}
+
+	// For a complete implementation, we would need to:
+	// 1. Parse the btree_node_phys_t structure from rootData
+	// 2. Read the btree_info_t from the end of the root node
+	// 3. Traverse the B-tree to enumerate all key/value pairs
+	// 4. Each key is a uint64_t logical offset
+	// 5. Each value is a prange_t (pr_start_paddr, pr_block_count)
+	// 6. Sort by logical offset and return the ranges in order
+
+	// This is a simplified implementation that assumes common cases
+	// A full implementation would require using the btree service
+	if len(rootData) < 56 {
+		return nil, fmt.Errorf("B-tree root node too small: %d bytes", len(rootData))
+	}
+
+	// Check object type (should be BTREE or BTREE_NODE)
+	objType := binary.LittleEndian.Uint32(rootData[24:28])
+	if objType != types.ObjectTypeBtree && objType != types.ObjectTypeBtreeNode {
+		return nil, fmt.Errorf("invalid B-tree root node type: 0x%08X", objType)
+	}
+
+	// For now, return an error indicating this feature needs full implementation
+	// In production, this would parse the B-tree using the existing btree service
+	return nil, fmt.Errorf("non-contiguous checkpoint descriptor areas require full B-tree parsing (not yet implemented)")
+
+	// TODO: Implement full B-tree traversal:
+	// 1. Parse btree_node_phys_t header
+	// 2. Read table of contents (kvloc_t or kvoff_t based on BTNODE_FIXED_KV_SIZE flag)
+	// 3. For each entry:
+	//    - Read key (uint64_t logical offset)
+	//    - Read value (prange_t: start address + block count)
+	// 4. If non-leaf node (btn_level > 0), recursively traverse children
+	// 5. Collect all ranges and return in sorted order
 }

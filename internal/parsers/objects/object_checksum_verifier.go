@@ -70,9 +70,13 @@ func fletcher64(data []byte) [types.MaxCksumSize]byte {
 		sum2 %= maxUint32
 	}
 
-	// Final result: combine sum2 and sum1 into 64-bit checksum
-	// sum2 in high 32 bits, sum1 in low 32 bits
-	result := (sum2 << 32) | sum1
+	// Calculate the value needed to be able to get a checksum of zero
+	// This is the correct Fletcher-64 final calculation per APFS spec
+	ckLow := maxUint32 - ((sum1 + sum2) % maxUint32)
+	ckHigh := maxUint32 - ((sum1 + ckLow) % maxUint32)
+
+	// Combine into final 64-bit checksum: ck_low | (ck_high << 32)
+	result := ckLow | (ckHigh << 32)
 
 	var checksum [types.MaxCksumSize]byte
 	binary.LittleEndian.PutUint64(checksum[:], result)

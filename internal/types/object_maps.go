@@ -25,10 +25,12 @@ type OmapPhysT struct {
 	// The type of tree being used for snapshots. (page 45)
 	OmSnapshotTreeType uint32
 
-	// The virtual object identifier of the tree being used for object mappings. (page 45)
+	// The physical object identifier of the tree being used for object mappings. (page 45)
+	// NOTE: Apple's APFS File System Reference incorrectly lists this as virtual, but it is physical.
 	OmTreeOid OidT
 
-	// The virtual object identifier of the tree being used to hold snapshot information. (page 45)
+	// The physical object identifier of the tree being used to hold snapshot information. (page 45)
+	// NOTE: Apple's APFS File System Reference incorrectly lists this as virtual, but it is physical.
 	OmSnapshotTreeOid OidT
 
 	// The transaction identifier of the most recent snapshot that's stored in this object map. (page 45)

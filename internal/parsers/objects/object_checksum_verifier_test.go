@@ -8,16 +8,49 @@ import (
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
+// generateFletcher64Checksum generates a correct Fletcher-64 checksum for APFS
+// This must match the algorithm in object_checksum_verifier.go
 func generateFletcher64Checksum(data []byte) [types.MaxCksumSize]byte {
+	const maxUint32 = uint64(0xFFFFFFFF)
+	const chunkSize = 1024 // Process 1024 words (4096 bytes) at a time
+
 	var sum1, sum2 uint64
-	for i := 0; i < len(data); i += 8 {
-		word := binary.LittleEndian.Uint64(data[i : i+8])
-		sum1 += word
-		sum2 += sum1
+
+	// Process data in chunks of 32-bit words
+	for offset := 0; offset < len(data); offset += chunkSize * 4 {
+		// Determine the end of this chunk
+		chunkEnd := offset + chunkSize*4
+		if chunkEnd > len(data) {
+			chunkEnd = len(data)
+		}
+
+		// Process 32-bit words in this chunk
+		for i := offset; i < chunkEnd; i += 4 {
+			// Ensure we don't read past the end
+			if i+4 > len(data) {
+				break
+			}
+
+			word := binary.LittleEndian.Uint32(data[i : i+4])
+			sum1 += uint64(word)
+			sum2 += sum1
+		}
+
+		// Apply modulo operations after each chunk
+		sum1 %= maxUint32
+		sum2 %= maxUint32
 	}
-	var result [types.MaxCksumSize]byte
-	binary.LittleEndian.PutUint64(result[:], sum2)
-	return result
+
+	// Calculate the value needed to be able to get a checksum of zero
+	ckLow := maxUint32 - ((sum1 + sum2) % maxUint32)
+	ckHigh := maxUint32 - ((sum1 + ckLow) % maxUint32)
+
+	// Combine into final 64-bit checksum
+	result := ckLow | (ckHigh << 32)
+
+	var checksum [types.MaxCksumSize]byte
+	binary.LittleEndian.PutUint64(checksum[:], result)
+	return checksum
 }
 
 func TestChecksumAndVerify(t *testing.T) {
