@@ -6,6 +6,7 @@ import (
 
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
 	"github.com/deploymenttheory/go-apfs/internal/parsers/btrees"
+	"github.com/deploymenttheory/go-apfs/internal/parsers/object_maps"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
@@ -38,16 +39,20 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 		return 0, fmt.Errorf("container object map OID is zero")
 	}
 
-	// Read and parse the object map
+	// Read and parse the object map using our new parser
 	omapData, err := btor.container.ReadBlock(uint64(omapOID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to read object map at block %d: %w", omapOID, err)
 	}
 
-	omap, err := btor.parseObjectMapHeader(omapData, binary.LittleEndian)
+	omapReader, err := objectmaps.NewOmapReader(omapData, binary.LittleEndian)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse object map header: %w", err)
 	}
+
+	omap := omapReader.GetOmap()
+	fmt.Printf("DEBUG: Object map parsed - TreeOID=%d, MostRecentSnap=%d, Flags=0x%08X\n", 
+		omap.OmTreeOid, omap.OmMostRecentSnap, omap.OmFlags)
 
 	// Check if this is a manually managed object map (no B-tree)
 	if omap.OmTreeOid == 0 {
@@ -55,58 +60,28 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 		return btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
 	}
 
-	// This object map uses a B-tree - first try manually managed, then B-tree if that fails
-	fmt.Printf("DEBUG: Object map uses B-tree at OID %d, searching for virtual OID %d\n", omap.OmTreeOid, virtualOID)
+	// This object map uses a B-tree - use the proper B-tree OID and transaction context
+	fmt.Printf("DEBUG: Object map uses B-tree at OID %d, searching for virtual OID %d with transactionID %d\n", omap.OmTreeOid, virtualOID, transactionID)
 	
-	// First try manually managed object map (in case B-tree is empty)
+	// Use the most recent snapshot XID if available, otherwise use the provided transaction ID
+	searchXID := transactionID
+	if omap.OmMostRecentSnap > 0 && omap.OmMostRecentSnap <= transactionID {
+		searchXID = omap.OmMostRecentSnap
+		fmt.Printf("DEBUG: Using most recent snapshot XID %d instead of %d\n", searchXID, transactionID)
+	}
+	
+	// First try manually managed object map (in case B-tree is empty or for fallback)
 	manualResult, err := btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
 	if err == nil {
 		fmt.Printf("DEBUG: Found mapping in manually managed section: %d\n", manualResult)
 		return manualResult, nil
 	}
 	
-	// If manual search failed, try B-tree approach
+	// If manual search failed, try B-tree approach with proper transaction ID
 	fmt.Printf("DEBUG: Manual search failed (%v), trying B-tree approach\n", err)
-	return btor.searchBTreeObjectMap(omap.OmTreeOid, virtualOID, transactionID)
+	return btor.searchBTreeObjectMap(omap.OmTreeOid, virtualOID, searchXID)
 }
 
-// parseObjectMapHeader parses the object map header from raw data
-func (btor *BTreeObjectResolver) parseObjectMapHeader(data []byte, endian binary.ByteOrder) (*types.OmapPhysT, error) {
-	if len(data) < 72 {
-		return nil, fmt.Errorf("insufficient data for object map header")
-	}
-
-	omap := &types.OmapPhysT{}
-
-	// Parse object header (first 32 bytes)
-	copy(omap.OmO.OChecksum[:], data[0:8])
-	omap.OmO.OOid = types.OidT(endian.Uint64(data[8:16]))
-	omap.OmO.OXid = types.XidT(endian.Uint64(data[16:24]))
-	omap.OmO.OType = endian.Uint32(data[24:28])
-	omap.OmO.OSubtype = endian.Uint32(data[28:32])
-
-	// Parse object map specific fields
-	offset := 32
-	omap.OmFlags = endian.Uint32(data[offset : offset+4])
-	offset += 4
-	omap.OmSnapCount = endian.Uint32(data[offset : offset+4])
-	offset += 4
-	omap.OmTreeType = endian.Uint32(data[offset : offset+4])
-	offset += 4
-	omap.OmSnapshotTreeType = endian.Uint32(data[offset : offset+4])
-	offset += 4
-	omap.OmTreeOid = types.OidT(endian.Uint64(data[offset : offset+8]))
-	offset += 8
-	omap.OmSnapshotTreeOid = types.OidT(endian.Uint64(data[offset : offset+8]))
-	offset += 8
-	omap.OmMostRecentSnap = types.XidT(endian.Uint64(data[offset : offset+8]))
-	offset += 8
-	omap.OmPendingRevertMin = types.XidT(endian.Uint64(data[offset : offset+8]))
-	offset += 8
-	omap.OmPendingRevertMax = types.XidT(endian.Uint64(data[offset : offset+8]))
-
-	return omap, nil
-}
 
 // searchManuallyManagedObjectMap searches for object mappings in a manually managed object map
 func (btor *BTreeObjectResolver) searchManuallyManagedObjectMap(omapData []byte, virtualOID types.OidT, transactionID types.XidT) (types.Paddr, error) {
@@ -215,6 +190,7 @@ func (btor *BTreeObjectResolver) searchBTreeNode(nodeReader interface{}, searchK
 }
 
 // searchLeafNode searches for a key in a leaf node and returns the associated physical address
+// Implements APFS spec: "use the key with the largest transaction identifier" 
 func (btor *BTreeObjectResolver) searchLeafNode(node interfaces.BTreeNodeReader, searchKey types.OmapKeyT) (types.Paddr, error) {
 	// Get node data
 	nodeData := node.Data()
@@ -224,6 +200,12 @@ func (btor *BTreeObjectResolver) searchLeafNode(node interfaces.BTreeNodeReader,
 	entries, err := btor.parseTableOfContents(node, nodeData)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse table of contents: %w", err)
+	}
+
+	// Track the best match (OID matches and XID <= searchXID, with highest XID)
+	var bestMatch *struct {
+		physAddr types.Paddr
+		xid      types.XidT
 	}
 
 	// Search for the key (with debug output)
@@ -249,19 +231,30 @@ func (btor *BTreeObjectResolver) searchLeafNode(node interfaces.BTreeNodeReader,
 			fmt.Printf("DEBUG: Entry %d: OID=%d (0x%016x), XID=%d (searching for OID=%d, XID<=%d)\n", 
 				i, entryOID, entryOID, entryXID, searchKey.OkOid, searchKey.OkXid)
 
-			// Check if this matches our search criteria
-			// For object maps, we want exact OID match and XID <= search XID
+			// Check if this matches our search criteria (OID exact match, XID <= searchXID)
 			if entryOID == searchKey.OkOid && entryXID <= searchKey.OkXid {
 				// Parse the value as an object map value to get physical address
 				if len(value) >= 16 {
 					physAddr := types.Paddr(binary.LittleEndian.Uint64(value[8:16])) // paddr is at offset 8
-					fmt.Printf("DEBUG: Found matching entry! Physical address: %d\n", physAddr)
-					return physAddr, nil
+					
+					// If this is our first match, or this entry has a higher XID, use it
+					if bestMatch == nil || entryXID > bestMatch.xid {
+						bestMatch = &struct {
+							physAddr types.Paddr
+							xid      types.XidT
+						}{physAddr, entryXID}
+						fmt.Printf("DEBUG: New best match! XID=%d, Physical address: %d\n", entryXID, physAddr)
+					}
 				}
 			}
 		} else {
 			fmt.Printf("DEBUG: Entry %d: Key too short (%d bytes)\n", i, len(key))
 		}
+	}
+
+	if bestMatch != nil {
+		fmt.Printf("DEBUG: B-tree search succeeded: physical address %d (XID=%d)\n", bestMatch.physAddr, bestMatch.xid)
+		return bestMatch.physAddr, nil
 	}
 
 	return 0, fmt.Errorf("key not found in leaf node")

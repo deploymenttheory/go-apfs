@@ -82,8 +82,13 @@ func parseVolumeSuperblock(data []byte, endian binary.ByteOrder) (*types.ApfsSup
 	sb.ApfsFsAllocCount = endian.Uint64(data[offset : offset+8])
 	offset += 8
 
-	// Skip metadata crypto structure (112 bytes)
-	offset += 112
+	// Parse metadata crypto structure (20 bytes, not 112!)
+	// struct wrapped_meta_crypto_state { 
+	//   uint16_t major_version; uint16_t minor_version; uint32_t cpflags;
+	//   uint32_t persistent_class; uint32_t key_os_version; uint16_t key_revision; uint16_t unused;
+	// }
+	fmt.Printf("DEBUG: Parsing crypto structure at offset %d\n", offset)
+	offset += 20 // Skip wrapped_meta_crypto_state_t (20 bytes, not 112)
 
 	// Parse tree types
 	sb.ApfsRootTreeType = endian.Uint32(data[offset : offset+4])
@@ -95,20 +100,23 @@ func parseVolumeSuperblock(data []byte, endian binary.ByteOrder) (*types.ApfsSup
 	sb.ApfsSnapMetatreeType = endian.Uint32(data[offset : offset+4])
 	offset += 4
 
-	// Skip padding
-	offset += 4
-
-	// Parse OIDs
+	// Parse OIDs at their correct locations according to APFS spec
+	fmt.Printf("DEBUG: Parsing OIDs starting from offset %d\n", offset)
+	
 	sb.ApfsOmapOid = types.OidT(endian.Uint64(data[offset : offset+8]))
+	fmt.Printf("DEBUG: ApfsOmapOid at offset %d = %d\n", offset, sb.ApfsOmapOid)
 	offset += 8
 
 	sb.ApfsRootTreeOid = types.OidT(endian.Uint64(data[offset : offset+8]))
+	fmt.Printf("DEBUG: ApfsRootTreeOid at offset %d = %d\n", offset, sb.ApfsRootTreeOid)
 	offset += 8
 
 	sb.ApfsExtentrefTreeOid = types.OidT(endian.Uint64(data[offset : offset+8]))
+	fmt.Printf("DEBUG: ApfsExtentrefTreeOid at offset %d = %d\n", offset, sb.ApfsExtentrefTreeOid)
 	offset += 8
 
 	sb.ApfsSnapMetaTreeOid = types.OidT(endian.Uint64(data[offset : offset+8]))
+	fmt.Printf("DEBUG: ApfsSnapMetaTreeOid at offset %d = %d\n", offset, sb.ApfsSnapMetaTreeOid)
 	offset += 8
 
 	// Parse revert fields
@@ -124,9 +132,11 @@ func parseVolumeSuperblock(data []byte, endian binary.ByteOrder) (*types.ApfsSup
 
 	// Parse file/directory/symlink counts
 	sb.ApfsNumFiles = endian.Uint64(data[offset : offset+8])
+	fmt.Printf("DEBUG: ApfsNumFiles at offset %d = %d\n", offset, sb.ApfsNumFiles)
 	offset += 8
 
 	sb.ApfsNumDirectories = endian.Uint64(data[offset : offset+8])
+	fmt.Printf("DEBUG: ApfsNumDirectories at offset %d = %d\n", offset, sb.ApfsNumDirectories)
 	offset += 8
 
 	sb.ApfsNumSymlinks = endian.Uint64(data[offset : offset+8])
@@ -158,15 +168,11 @@ func parseVolumeSuperblock(data []byte, endian binary.ByteOrder) (*types.ApfsSup
 	sb.ApfsFsFlags = endian.Uint64(data[offset : offset+8])
 	offset += 8
 
-	// Parse formatted by timestamp
-	// This is an ApfsModifiedByT structure
+	// Parse formatted by timestamp (ApfsModifiedByT structure - 8 bytes)
 	offset += 8
 
-	// Parse modification history - array of ApfsModifiedByT
-	for i := 0; i < types.ApfsMaxHist; i++ {
-		// Skip each modification record (8 bytes each)
-		offset += 8
-	}
+	// Parse modification history - array of ApfsModifiedByT (APFS_MAX_HIST = 8 entries, 8 bytes each)
+	offset += types.ApfsMaxHist * 8
 
 	// Parse volume name
 	if offset+types.ApfsVolnameLen <= len(data) {

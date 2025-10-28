@@ -22,6 +22,8 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 
 	// Try to find a test DMG file
 	testFiles := []string{
+		"populated_apfs.dmg",
+		"basic_apfs.dmg",
 		"test_apfs_with_files.dmg",
 		"Cursor-darwin-universal.dmg",
 		"test_apfs.dmg",
