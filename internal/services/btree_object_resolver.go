@@ -6,7 +6,7 @@ import (
 
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
 	"github.com/deploymenttheory/go-apfs/internal/parsers/btrees"
-	"github.com/deploymenttheory/go-apfs/internal/parsers/object_maps"
+	objectmaps "github.com/deploymenttheory/go-apfs/internal/parsers/object_maps"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
@@ -51,8 +51,6 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 	}
 
 	omap := omapReader.GetOmap()
-	fmt.Printf("DEBUG: Object map parsed - TreeOID=%d, MostRecentSnap=%d, Flags=0x%08X\n", 
-		omap.OmTreeOid, omap.OmMostRecentSnap, omap.OmFlags)
 
 	// Check if this is a manually managed object map (no B-tree)
 	if omap.OmTreeOid == 0 {
@@ -61,27 +59,26 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 	}
 
 	// This object map uses a B-tree - use the proper B-tree OID and transaction context
-	fmt.Printf("DEBUG: Object map uses B-tree at OID %d, searching for virtual OID %d with transactionID %d\n", omap.OmTreeOid, virtualOID, transactionID)
-	
+	// fmt.Printf("DEBUG: Object map uses B-tree at OID %d, searching for virtual OID %d with transactionID %d\n", omap.OmTreeOid, virtualOID, transactionID)
+
 	// Use the most recent snapshot XID if available, otherwise use the provided transaction ID
 	searchXID := transactionID
 	if omap.OmMostRecentSnap > 0 && omap.OmMostRecentSnap <= transactionID {
 		searchXID = omap.OmMostRecentSnap
-		fmt.Printf("DEBUG: Using most recent snapshot XID %d instead of %d\n", searchXID, transactionID)
+		// fmt.Printf("DEBUG: Using most recent snapshot XID %d instead of %d\n", searchXID, transactionID)
 	}
-	
+
 	// First try manually managed object map (in case B-tree is empty or for fallback)
 	manualResult, err := btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
 	if err == nil {
-		fmt.Printf("DEBUG: Found mapping in manually managed section: %d\n", manualResult)
+		// fmt.Printf("DEBUG: Found mapping in manually managed section: %d\n", manualResult)
 		return manualResult, nil
 	}
-	
+
 	// If manual search failed, try B-tree approach with proper transaction ID
-	fmt.Printf("DEBUG: Manual search failed (%v), trying B-tree approach\n", err)
+	// fmt.Printf("DEBUG: Manual search failed (%v), trying B-tree approach\n", err)
 	return btor.searchBTreeObjectMap(omap.OmTreeOid, virtualOID, searchXID)
 }
-
 
 // searchManuallyManagedObjectMap searches for object mappings in a manually managed object map
 func (btor *BTreeObjectResolver) searchManuallyManagedObjectMap(omapData []byte, virtualOID types.OidT, transactionID types.XidT) (types.Paddr, error) {
@@ -119,7 +116,7 @@ func (btor *BTreeObjectResolver) searchBTreeObjectMap(treeOID types.OidT, virtua
 	// To resolve this, we need to either:
 	// 1. Have a bootstrap mechanism where the root B-tree is stored physically
 	// 2. Use a different resolution method for the B-tree itself
-	
+
 	// For now, we'll assume the B-tree root is stored at a physical address equal to its OID
 	// This is often the case in APFS implementations
 	fmt.Printf("DEBUG: Reading B-tree root from block %d\n", treeOID)
@@ -131,7 +128,7 @@ func (btor *BTreeObjectResolver) searchBTreeObjectMap(treeOID types.OidT, virtua
 
 	// Parse the B-tree node
 	fmt.Printf("DEBUG: Parsing B-tree node (%d bytes)\n", len(treeData))
-	
+
 	// Debug: Check the first few bytes to understand node structure
 	if len(treeData) >= 64 {
 		fmt.Printf("DEBUG: Node header bytes: %02x\n", treeData[:64])
@@ -140,7 +137,7 @@ func (btor *BTreeObjectResolver) searchBTreeObjectMap(treeOID types.OidT, virtua
 		fmt.Printf("DEBUG: Node level: %d\n", binary.LittleEndian.Uint16(treeData[34:36]))
 		fmt.Printf("DEBUG: Node key count: %d\n", binary.LittleEndian.Uint32(treeData[36:40]))
 	}
-	
+
 	nodeReader, err := btrees.NewBTreeNodeReader(treeData, binary.LittleEndian)
 	if err != nil {
 		fmt.Printf("DEBUG: Failed to parse B-tree node: %v\n", err)
@@ -190,7 +187,7 @@ func (btor *BTreeObjectResolver) searchBTreeNode(nodeReader interface{}, searchK
 }
 
 // searchLeafNode searches for a key in a leaf node and returns the associated physical address
-// Implements APFS spec: "use the key with the largest transaction identifier" 
+// Implements APFS spec: "use the key with the largest transaction identifier"
 func (btor *BTreeObjectResolver) searchLeafNode(node interfaces.BTreeNodeReader, searchKey types.OmapKeyT) (types.Paddr, error) {
 	// Get node data
 	nodeData := node.Data()
@@ -228,7 +225,7 @@ func (btor *BTreeObjectResolver) searchLeafNode(node interfaces.BTreeNodeReader,
 			entryOID := types.OidT(binary.LittleEndian.Uint64(key[0:8]))
 			entryXID := types.XidT(binary.LittleEndian.Uint64(key[8:16]))
 
-			fmt.Printf("DEBUG: Entry %d: OID=%d (0x%016x), XID=%d (searching for OID=%d, XID<=%d)\n", 
+			fmt.Printf("DEBUG: Entry %d: OID=%d (0x%016x), XID=%d (searching for OID=%d, XID<=%d)\n",
 				i, entryOID, entryOID, entryXID, searchKey.OkOid, searchKey.OkXid)
 
 			// Check if this matches our search criteria (OID exact match, XID <= searchXID)
@@ -236,7 +233,7 @@ func (btor *BTreeObjectResolver) searchLeafNode(node interfaces.BTreeNodeReader,
 				// Parse the value as an object map value to get physical address
 				if len(value) >= 16 {
 					physAddr := types.Paddr(binary.LittleEndian.Uint64(value[8:16])) // paddr is at offset 8
-					
+
 					// If this is our first match, or this entry has a higher XID, use it
 					if bestMatch == nil || entryXID > bestMatch.xid {
 						bestMatch = &struct {
@@ -290,7 +287,7 @@ func (btor *BTreeObjectResolver) findChildNode(node interfaces.BTreeNodeReader, 
 			entryOID := types.OidT(binary.LittleEndian.Uint64(key[0:8]))
 			entryXID := types.XidT(binary.LittleEndian.Uint64(key[8:16]))
 
-			// If our search key is less than or equal to this entry's key, 
+			// If our search key is less than or equal to this entry's key,
 			// we should follow this child
 			if btor.compareKeys(searchKey, types.OmapKeyT{OkOid: entryOID, OkXid: entryXID}) <= 0 {
 				// The value in internal nodes contains the child OID
@@ -344,15 +341,15 @@ func (btor *BTreeObjectResolver) parseTableOfContents(node interfaces.BTreeNodeR
 	// btree_node_phys_t header is 56 bytes, so btn_data starts at offset 56
 	btnDataStart := 56
 	tableOffset := btnDataStart + int(tableSpace.Off)
-	
-	fmt.Printf("DEBUG: Table parsing - keyCount=%d, tableSpace.Off=%d, tableOffset=%d, nodeDataLen=%d\n", 
+
+	fmt.Printf("DEBUG: Table parsing - keyCount=%d, tableSpace.Off=%d, tableOffset=%d, nodeDataLen=%d\n",
 		keyCount, tableSpace.Off, tableOffset, len(nodeData))
-	
+
 	// Debug: Show what's at the start of btn_data
 	if len(nodeData) > btnDataStart+32 {
 		fmt.Printf("DEBUG: btn_data start (offset %d): %02x\n", btnDataStart, nodeData[btnDataStart:btnDataStart+32])
 	}
-	
+
 	if tableOffset >= len(nodeData) {
 		return nil, fmt.Errorf("table offset %d exceeds node data length %d", tableOffset, len(nodeData))
 	}
@@ -368,12 +365,12 @@ func (btor *BTreeObjectResolver) parseTableOfContents(node interfaces.BTreeNodeR
 			if offset+entrySize > len(nodeData) {
 				break
 			}
-			
+
 			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
 			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
-			
+
 			fmt.Printf("DEBUG: Entry %d: keyOffset=%d, valueOffset=%d\n", i, keyOffset, valueOffset)
-			
+
 			entries = append(entries, tableEntry{
 				keyOffset:   keyOffset,
 				valueOffset: valueOffset,
@@ -389,15 +386,15 @@ func (btor *BTreeObjectResolver) parseTableOfContents(node interfaces.BTreeNodeR
 			if offset+entrySize > len(nodeData) {
 				break
 			}
-			
+
 			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
 			keyLen := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
 			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+4 : offset+6])
 			valueLen := binary.LittleEndian.Uint16(nodeData[offset+6 : offset+8])
-			
-			fmt.Printf("DEBUG: Entry %d: keyOffset=%d, keyLen=%d, valueOffset=%d, valueLen=%d\n", 
+
+			fmt.Printf("DEBUG: Entry %d: keyOffset=%d, keyLen=%d, valueOffset=%d, valueLen=%d\n",
 				i, keyOffset, keyLen, valueOffset, valueLen)
-			
+
 			entries = append(entries, tableEntry{
 				keyOffset:   keyOffset,
 				keyLen:      keyLen,
@@ -434,14 +431,14 @@ func (btor *BTreeObjectResolver) extractKeyValue(nodeData []byte, entry tableEnt
 		// For object maps, keys are 16 bytes (OID + XID)
 		keyEnd := keyStart + 16
 		if keyEnd > len(nodeData) {
-			return nil, nil, fmt.Errorf("key extends beyond node data: keyStart=%d, keyEnd=%d, nodeDataLen=%d", 
+			return nil, nil, fmt.Errorf("key extends beyond node data: keyStart=%d, keyEnd=%d, nodeDataLen=%d",
 				keyStart, keyEnd, len(nodeData))
 		}
 		key = nodeData[keyStart:keyEnd]
 	} else {
 		keyEnd := keyStart + int(entry.keyLen)
 		if keyEnd > len(nodeData) {
-			return nil, nil, fmt.Errorf("key extends beyond node data: keyStart=%d, keyEnd=%d, nodeDataLen=%d", 
+			return nil, nil, fmt.Errorf("key extends beyond node data: keyStart=%d, keyEnd=%d, nodeDataLen=%d",
 				keyStart, keyEnd, len(nodeData))
 		}
 		key = nodeData[keyStart:keyEnd]
@@ -453,14 +450,14 @@ func (btor *BTreeObjectResolver) extractKeyValue(nodeData []byte, entry tableEnt
 		// For object maps, values are 16 bytes (flags + size + paddr)
 		valueEnd := valueStart + 16
 		if valueEnd > len(nodeData) {
-			return nil, nil, fmt.Errorf("value extends beyond node data: valueStart=%d, valueEnd=%d, nodeDataLen=%d", 
+			return nil, nil, fmt.Errorf("value extends beyond node data: valueStart=%d, valueEnd=%d, nodeDataLen=%d",
 				valueStart, valueEnd, len(nodeData))
 		}
 		value = nodeData[valueStart:valueEnd]
 	} else {
 		valueEnd := valueStart + int(entry.valueLen)
 		if valueEnd > len(nodeData) {
-			return nil, nil, fmt.Errorf("value extends beyond node data: valueStart=%d, valueEnd=%d, nodeDataLen=%d", 
+			return nil, nil, fmt.Errorf("value extends beyond node data: valueStart=%d, valueEnd=%d, nodeDataLen=%d",
 				valueStart, valueEnd, len(nodeData))
 		}
 		value = nodeData[valueStart:valueEnd]
@@ -480,13 +477,13 @@ func (btor *BTreeObjectResolver) compareKeys(key1, key2 types.OmapKeyT) int {
 	} else if key1.OkOid > key2.OkOid {
 		return 1
 	}
-	
+
 	// If OIDs are equal, compare by XID
 	if key1.OkXid < key2.OkXid {
 		return -1
 	} else if key1.OkXid > key2.OkXid {
 		return 1
 	}
-	
+
 	return 0 // Keys are equal
 }

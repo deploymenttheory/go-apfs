@@ -36,13 +36,13 @@ func NewVolumeService(container *ContainerReader, volumeOID types.OidT) (*Volume
 	if err != nil {
 		// Fallback 1: try treating volumeOID as a direct physical address
 		physicalAddr = types.Paddr(volumeOID)
-		
+
 		// Fallback 2: if that fails, scan for volume superblock near container structures
 		volSBData, readErr := container.ReadBlock(uint64(physicalAddr))
 		if readErr != nil || !isValidVolumeSuperblock(volSBData) {
-			// Scan some blocks after the container for the volume superblock
+			// Scan more blocks for the volume superblock (volumes can be stored anywhere in container)
 			found := false
-			for scanBlock := uint64(1); scanBlock < 50; scanBlock++ {
+			for scanBlock := uint64(1); scanBlock < 500; scanBlock++ {
 				scanData, scanErr := container.ReadBlock(scanBlock)
 				if scanErr == nil && isValidVolumeSuperblock(scanData) {
 					physicalAddr = types.Paddr(scanBlock)
@@ -289,4 +289,3 @@ func (vs *VolumeServiceImpl) GetSymlinkCount() (uint64, error) {
 
 	return vs.volumeSB.ApfsNumSymlinks, nil
 }
-

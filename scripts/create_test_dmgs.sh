@@ -1,132 +1,172 @@
 #!/bin/bash
 
-# Script to create comprehensive test DMG suite for APFS B-tree testing
-# This creates DMGs with different filesystem states to test various B-tree scenarios
+# Script to create comprehensive test APFS images for testing
+# Creates raw APFS volumes that can be read directly without decompression
 
 set -e
 
 TESTS_DIR="/Users/dafyddwatkins/GitHub/deploymenttheory/go-apfs/tests"
-DESKTOP_DIR="$HOME/Desktop"
+TEMP_DIR="/tmp/apfs_test_build_$$"
 
-echo "Creating comprehensive APFS test DMG suite..."
+trap "cleanup_and_exit" EXIT INT TERM
 
-# Ensure tests directory exists
+cleanup_and_exit() {
+	echo "Cleaning up temporary files..."
+	
+	# Unmount any remaining volumes
+	for vol in /Volumes/TestAPFS* /Volumes/EmptyAPFS /Volumes/BasicAPFS /Volumes/PopulatedAPFS /Volumes/FullAPFS; do
+		if [ -d "$vol" ]; then
+			hdiutil detach "$vol" 2>/dev/null || true
+			sleep 1
+		fi
+	done
+	
+	# Remove temp directory
+	rm -rf "$TEMP_DIR"
+}
+
+echo "=== Creating APFS Test Images ==="
+echo "Test directory: $TESTS_DIR"
+echo "Temp directory: $TEMP_DIR"
+
+# Ensure clean test directory
+echo "Cleaning existing test files..."
 mkdir -p "$TESTS_DIR"
+rm -f "$TESTS_DIR"/*.dmg 2>/dev/null || true
 
-# 1. Empty APFS volume (minimal B-tree structures)
-echo "1. Creating empty APFS volume..."
-hdiutil create -size 5m -fs APFS -volname "EmptyAPFS" -type UDIF "$TESTS_DIR/empty_apfs.dmg"
+mkdir -p "$TEMP_DIR"
 
-# 2. APFS volume with a few files (basic B-tree population)
-echo "2. Creating APFS volume with basic files..."
-hdiutil create -size 8m -fs APFS -volname "BasicAPFS" -type UDIF "$TESTS_DIR/basic_apfs.dmg"
-hdiutil attach "$TESTS_DIR/basic_apfs.dmg"
+# Function to create and populate an APFS volume
+create_apfs_volume() {
+	local size=$1
+	local name=$2
+	local output_file=$3
+	local populate_func=$4
+	
+	echo ""
+	echo "=========================================="
+	echo "Creating: $name ($size)"
+	echo "=========================================="
+	
+	# Create a raw disk image file
+	local disk_image="$TEMP_DIR/${name}.img"
+	
+	echo "1. Creating raw disk image ($size)..."
+	hdiutil create -size "$size" -type SPARSE -fs APFS -volname "$name" -o "$disk_image"
+	
+	# The output is actually a .sparseimage file
+	local sparse_image="${disk_image}.sparseimage"
+	if [ ! -f "$sparse_image" ]; then
+		echo "ERROR: Failed to create disk image"
+		return 1
+	fi
+	
+	echo "2. Mounting volume..."
+	hdiutil attach "$sparse_image"
+	sleep 3
+	
+	# Find the mounted volume
+	local mount_point="/Volumes/$name"
+	if [ ! -d "$mount_point" ]; then
+		echo "ERROR: Volume $name not found at $mount_point after mount"
+		hdiutil detach "$sparse_image" 2>/dev/null || true
+		return 1
+	fi
+	
+	echo "3. Volume mounted at: $mount_point"
+	
+	# Populate the volume if function provided
+	if [ -n "$populate_func" ] && type "$populate_func" >/dev/null 2>&1; then
+		echo "4. Populating volume..."
+		"$populate_func" "$mount_point"
+	fi
+	
+	# Sync and unmount
+	echo "5. Syncing filesystem..."
+	sync
+	sleep 2
+	
+	echo "6. Unmounting volume..."
+	hdiutil detach "$mount_point"
+	sleep 2
+	
+	# Extract raw APFS to file (skip partition table, get just the container)
+	echo "7. Extracting raw APFS container..."
+	
+	# The APFS partition with GPT typically starts at block 40 (20480 bytes / 512)
+	# We need to find where APFS actually starts by looking for the magic
+	# For UDRO format with GPT, APFS is usually at offset 1048576 (256 * 4096)
+	# But we'll extract the whole image and let offset detection handle it
+	
+	# For now, just copy the sparse image directly as the output
+	# Our offset detection will find the APFS container
+	cp "$sparse_image" "$output_file"
+	
+	# Clean up sparse image
+	rm -f "$sparse_image"
+	
+	echo "✓ Created: $output_file"
+}
 
-# Add basic files
-echo "Basic test file content" > "/Volumes/BasicAPFS/readme.txt"
-echo "Another test file" > "/Volumes/BasicAPFS/test.dat"
-mkdir "/Volumes/BasicAPFS/subfolder"
-echo "File in subdirectory" > "/Volumes/BasicAPFS/subfolder/nested.txt"
+# Populate functions for different scenarios
 
-# Copy a small file from desktop if available
-if [ -f "$DESKTOP_DIR/Apple-File-System-Reference.pdf" ]; then
-    cp "$DESKTOP_DIR/Apple-File-System-Reference.pdf" "/Volumes/BasicAPFS/"
-fi
+populate_empty() {
+	# Empty volume - no additional files needed
+	echo "   (empty volume)"
+}
 
-hdiutil detach "/Volumes/BasicAPFS"
+populate_basic() {
+	local mount_point=$1
+	echo "Basic test file content" > "$mount_point/readme.txt"
+	echo "Another test file" > "$mount_point/test.dat"
+	mkdir -p "$mount_point/subfolder"
+	echo "File in subdirectory" > "$mount_point/subfolder/nested.txt"
+}
 
-# 3. APFS volume with many files (populated B-tree structures)
-echo "3. Creating APFS volume with many files..."
-hdiutil create -size 10m -fs APFS -volname "PopulatedAPFS" -type UDIF "$TESTS_DIR/populated_apfs.dmg"
-hdiutil attach "$TESTS_DIR/populated_apfs.dmg"
+populate_populated() {
+	local mount_point=$1
+	mkdir -p "$mount_point/Documents"
+	mkdir -p "$mount_point/Data"
+	
+	for i in {1..10}; do
+		echo "Test file content $i" > "$mount_point/Documents/file_$i.txt"
+	done
+	
+	for i in {1..5}; do
+		echo "Data file $i with some content to make it realistic" > "$mount_point/Data/data_$i.dat"
+	done
+	
+	ln -s "$mount_point/Documents/file_1.txt" "$mount_point/symlink_test.txt"
+}
 
-# Create directory structure
-mkdir -p "/Volumes/PopulatedAPFS/Documents"
-mkdir -p "/Volumes/PopulatedAPFS/Images"
-mkdir -p "/Volumes/PopulatedAPFS/Data"
+populate_full() {
+	local mount_point=$1
+	mkdir -p "$mount_point/bigfiles"
+	
+	# Create files to fill most of the space
+	dd if=/dev/random of="$mount_point/bigfiles/large_1.bin" bs=1024 count=800 2>/dev/null
+	dd if=/dev/random of="$mount_point/bigfiles/large_2.bin" bs=1024 count=800 2>/dev/null
+	
+	echo "File in full volume" > "$mount_point/test.txt"
+}
 
-# Create many files to force B-tree population (reduced for smaller DMG)
-for i in {1..20}; do
-    echo "Test file content $i" > "/Volumes/PopulatedAPFS/Documents/file_$i.txt"
-done
+# Create test volumes
 
-for i in {1..10}; do
-    echo "Data file $i with some content to make it larger" > "/Volumes/PopulatedAPFS/Data/data_$i.dat"
-    # Make some files larger
-    for j in {1..5}; do
-        echo "Additional line $j in file $i" >> "/Volumes/PopulatedAPFS/Data/data_$i.dat"
-    done
-done
+create_apfs_volume "5m" "EmptyAPFS" "$TESTS_DIR/empty_apfs.dmg" "populate_empty"
 
-# Copy files from desktop if available
-if [ -f "$DESKTOP_DIR/DevOps Maturity Model v0.8.xlsx" ]; then
-    cp "$DESKTOP_DIR/DevOps Maturity Model v0.8.xlsx" "/Volumes/PopulatedAPFS/Documents/"
-fi
+create_apfs_volume "8m" "BasicAPFS" "$TESTS_DIR/basic_apfs.dmg" "populate_basic"
 
-if [ -f "$DESKTOP_DIR/Asia Itinerary 20204.xlsx" ]; then
-    cp "$DESKTOP_DIR/Asia Itinerary 20204.xlsx" "/Volumes/PopulatedAPFS/Documents/"
-fi
+create_apfs_volume "10m" "PopulatedAPFS" "$TESTS_DIR/populated_apfs.dmg" "populate_populated"
 
-# Create some symbolic links and special files
-ln -s "/Volumes/PopulatedAPFS/Documents/file_1.txt" "/Volumes/PopulatedAPFS/symlink_test.txt"
+create_apfs_volume "6m" "FullAPFS" "$TESTS_DIR/full_apfs.dmg" "populate_full"
 
-# Force synchronization and filesystem consistency to ensure object mappings are committed
-echo "Synchronizing filesystem to commit all transactions and object mappings..."
-sync
-# Give APFS time to commit all pending transactions and create object mappings
-sleep 3
-# Force filesystem check and repair to ensure consistency
-diskutil verifyVolume "/Volumes/PopulatedAPFS" || true
-sync
-# Additional wait to ensure all background I/O is complete
-sleep 2
-
-hdiutil detach "/Volumes/PopulatedAPFS"
-
-# 4. APFS volume that's nearly full (stress test B-tree with space constraints)
-echo "4. Creating nearly full APFS volume..."
-hdiutil create -size 6m -fs APFS -volname "FullAPFS" -type UDIF "$TESTS_DIR/full_apfs.dmg"
-hdiutil attach "$TESTS_DIR/full_apfs.dmg"
-
-# Fill most of the space
-mkdir "/Volumes/FullAPFS/bigfiles"
-for i in {1..3}; do
-    # Create ~1MB files to fill most of the 6MB space
-    dd if=/dev/random of="/Volumes/FullAPFS/bigfiles/large_$i.bin" bs=1024 count=1024 2>/dev/null
-done
-
-# Add some regular files too
-echo "File in full volume" > "/Volumes/FullAPFS/test.txt"
-mkdir "/Volumes/FullAPFS/docs"
-echo "Documentation file" > "/Volumes/FullAPFS/docs/readme.md"
-
-hdiutil detach "/Volumes/FullAPFS"
-
-# 5. APFS volume with deleted files (B-tree with deleted entries)
-echo "5. Creating APFS volume with deleted files..."
-cp "$TESTS_DIR/populated_apfs.dmg" "$TESTS_DIR/deleted_files_apfs.dmg"
-hdiutil attach "$TESTS_DIR/deleted_files_apfs.dmg"
-
-# Delete half the files to create deleted B-tree entries
-for i in {1..10}; do
-    rm -f "/Volumes/PopulatedAPFS/Documents/file_$i.txt" 2>/dev/null || true
-done
-
-rm -rf "/Volumes/PopulatedAPFS/Data" 2>/dev/null || true
-echo "File after deletions" > "/Volumes/PopulatedAPFS/after_delete.txt"
-
-hdiutil detach "/Volumes/PopulatedAPFS"
-
-echo "✓ Created comprehensive test DMG suite (1-10MB sizes):"
-echo "  - empty_apfs.dmg (5MB): Empty APFS volume (minimal B-trees)"
-echo "  - basic_apfs.dmg (8MB): Basic files (simple B-tree structures)"
-echo "  - populated_apfs.dmg (10MB): Many files (fully populated B-trees)"
-echo "  - full_apfs.dmg (6MB): Nearly full volume (space-constrained B-trees)"
-echo "  - deleted_files_apfs.dmg (10MB): Volume with deleted files (B-tree with deletions)"
-
+# Summary
 echo ""
-echo "DMG sizes:"
-ls -lh "$TESTS_DIR"/*.dmg
-
+echo "=========================================="
+echo "✓ Test image creation complete!"
+echo "=========================================="
 echo ""
-echo "Test DMG suite creation complete!"
+echo "Created test images:"
+ls -lh "$TESTS_DIR"/*.dmg 2>/dev/null || echo "ERROR: No DMG files found!"
+
+exit 0

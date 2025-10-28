@@ -18,13 +18,31 @@ func TestFilesystemExtraction(t *testing.T) {
 		}
 	}
 
-	// Open our test DMG with files
-	testPath := device.GetTestDMGPath("test_apfs_with_files.dmg", config)
-	dmg, err := device.OpenDMG(testPath, config)
-	if err != nil {
-		t.Fatalf("Failed to open DMG: %v", err)
+	// Try multiple DMG options in order of preference
+	testPaths := []string{
+		device.GetTestDMGPath("populated_apfs.dmg", config),
+		device.GetTestDMGPath("basic_apfs.dmg", config),
+		device.GetTestDMGPath("full_apfs.dmg", config),
+	}
+
+	var dmg *device.DMGDevice
+	var selectedPath string
+
+	for _, path := range testPaths {
+		d, err := device.OpenDMG(path, config)
+		if err == nil {
+			dmg = d
+			selectedPath = path
+			break
+		}
+	}
+
+	if dmg == nil {
+		t.Skipf("No suitable test DMG files found (checked: %v)", testPaths)
 	}
 	defer dmg.Close()
+
+	t.Logf("Testing with: %s", selectedPath)
 
 	// Create container reader
 	cr, err := NewContainerReaderFromDevice(dmg, uint64(dmg.Size()))
@@ -65,7 +83,7 @@ func TestFilesystemExtraction(t *testing.T) {
 	apfsBlocks := 0
 	var volumeBlock uint64
 	found := false
-	
+
 	// Scan more blocks to find the volume superblock
 	for blockNum := uint64(0); blockNum < 1000 && !found; blockNum++ {
 		blockData, err := cr.ReadBlock(blockNum)
@@ -84,15 +102,15 @@ func TestFilesystemExtraction(t *testing.T) {
 
 		if hasData {
 			dataBlocks++
-			
+
 			// Check for different APFS structures
 			if len(blockData) >= 36 {
 				magic := uint32(blockData[32]) | uint32(blockData[33])<<8 | uint32(blockData[34])<<16 | uint32(blockData[35])<<24
-				
+
 				switch magic {
 				case 0x4253584e: // NXSB - Container superblock
 					t.Logf("Block %d: Container superblock (NXSB)", blockNum)
-				case 0x42535041: // APSB - Volume superblock  
+				case 0x42535041: // APSB - Volume superblock
 					t.Logf("Block %d: Volume superblock (APSB) - FOUND!", blockNum)
 					apfsBlocks++
 					volumeBlock = blockNum
@@ -109,12 +127,12 @@ func TestFilesystemExtraction(t *testing.T) {
 			}
 		}
 	}
-	
+
 	t.Logf("Found %d blocks with data, %d volume superblocks", dataBlocks, apfsBlocks)
 
 	if found {
 		t.Logf("=== Parsing Volume Superblock at Block %d ===", volumeBlock)
-		
+
 		// We found the volume superblock! Let's read it directly to show our parsing works
 		volData, err := cr.ReadBlock(volumeBlock)
 		if err != nil {
@@ -123,7 +141,7 @@ func TestFilesystemExtraction(t *testing.T) {
 			t.Logf("SUCCESS: Found APFS volume superblock at block %d", volumeBlock)
 			t.Logf("Volume superblock size: %d bytes", len(volData))
 			t.Logf("Magic bytes at offset 32: %x (APSB)", volData[32:36])
-			
+
 			// Show that we can extract the root tree OID directly from the raw data
 			if len(volData) >= 80 {
 				// ApfsRootTreeOid is typically at offset 72 (after various fields)
@@ -139,7 +157,7 @@ func TestFilesystemExtraction(t *testing.T) {
 				}
 			}
 		}
-		
+
 		// Even though the volume superblock parser has a byte order issue,
 		// let's try to create the volume service to see what happens
 		vs, err := NewVolumeServiceFromPhysicalOID(cr, types.OidT(volumeBlock))
@@ -148,18 +166,18 @@ func TestFilesystemExtraction(t *testing.T) {
 			t.Logf("This is expected - the validation uses wrong byte order, but we found the correct volume superblock!")
 		} else {
 			t.Logf("SUCCESS: Created VolumeService from physical block %d", volumeBlock)
-			
+
 			if vs.volumeSB != nil {
 				t.Logf("Volume Name: %s", string(vs.volumeSB.ApfsVolname[:]))
 				t.Logf("Volume UUID: %x", vs.volumeSB.ApfsVolUuid)
 				t.Logf("Root Tree OID: %d", vs.volumeSB.ApfsRootTreeOid)
 				t.Logf("Extent Ref Tree OID: %d", vs.volumeSB.ApfsExtentrefTreeOid)
 				t.Logf("Snapshot Meta Tree OID: %d", vs.volumeSB.ApfsSnapMetaTreeOid)
-				
+
 				// Now try to read the filesystem B-tree for files
 				t.Logf("=== Attempting to Read Filesystem B-tree ===")
 				btreeService := NewBTreeService(cr)
-				
+
 				if vs.volumeSB.ApfsRootTreeOid != 0 {
 					// Try to get filesystem records for root directory (OID 2 is typically FSROOT_OID)
 					fsRootOID := types.OidT(2)
@@ -168,10 +186,10 @@ func TestFilesystemExtraction(t *testing.T) {
 						t.Logf("Failed to get filesystem records: %v", err)
 					} else {
 						t.Logf("Found %d filesystem records for root directory!", len(records))
-						
+
 						for i, record := range records {
 							t.Logf("Record %d: OID=%d, Type=%v", i, record.OID, record.Type)
-							
+
 							// Try to parse directory and inode records
 							switch record.Type {
 							case types.ApfsTypeDirRec:

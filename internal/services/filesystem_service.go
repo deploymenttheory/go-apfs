@@ -32,7 +32,6 @@ type FileEntry struct {
 	Modified uint64
 }
 
-
 // NewFileSystemService creates a new FileSystemService instance
 func NewFileSystemService(container *ContainerReader, volumeOID types.OidT, volumeSB *types.ApfsSuperblockT) (*FileSystemServiceImpl, error) {
 	if container == nil {
@@ -106,39 +105,6 @@ func (fs *FileSystemServiceImpl) WalkTree(startPath string, callback func(*FileE
 	return fs.walkTreeRecursive(startPath, callback)
 }
 
-// GetFileMetadata returns metadata for a file at the given path
-func (fs *FileSystemServiceImpl) GetFileMetadata(path string) (*FileEntry, error) {
-	path = filepath.Clean(path)
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	inode, err := fs.getInodeByPath(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get inode: %w", err)
-	}
-
-	inodeData, err := fs.loadInodeData(inode)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load inode data: %w", err)
-	}
-
-	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse inode: %w", err)
-	}
-
-	return &FileEntry{
-		Inode:    uint64(inode),
-		Name:     filepath.Base(path),
-		Path:     path,
-		IsDir:    inodeReader.IsDirectory(),
-		Size:     0, // Size would need to be calculated from file extents
-		Mode:     uint16(inodeReader.Mode()),
-		Modified: uint64(inodeReader.ModificationTime().Unix()),
-	}, nil
-}
-
 // Private helper functions
 
 type inodeData struct {
@@ -186,7 +152,7 @@ func (fs *FileSystemServiceImpl) getInodeByPath(path string) (types.OidT, error)
 func (fs *FileSystemServiceImpl) loadInodeData(oid types.OidT) (*inodeData, error) {
 	// The OID we receive is actually a virtual object ID that points to a B-tree node
 	// We need to resolve it and then parse the B-tree node to find the actual inode record
-	
+
 	// Resolve the virtual object ID to physical address
 	physAddr, err := fs.resolver.ResolveVirtualObject(oid, fs.container.GetSuperblock().NxNextXid-1)
 	if err != nil {
@@ -215,7 +181,7 @@ func (fs *FileSystemServiceImpl) searchBTreeNodeForInode(nodeReader interfaces.B
 		// For internal nodes, we need to traverse to the correct child
 		return fs.traverseToInodeLeaf(nodeReader, targetOID)
 	}
-	
+
 	// For leaf nodes, search for the inode record
 	return fs.extractInodeFromLeaf(nodeReader, targetOID)
 }
@@ -225,16 +191,16 @@ func (fs *FileSystemServiceImpl) traverseToInodeLeaf(nodeReader interfaces.BTree
 	tableSpace := nodeReader.TableSpace()
 	nodeData := nodeReader.Data()
 	keyCount := nodeReader.KeyCount()
-	
+
 	btnDataStart := 56
 	tableOffset := btnDataStart + int(tableSpace.Off)
-	
+
 	if tableOffset >= len(nodeData) {
 		return nil, fmt.Errorf("table offset exceeds node data")
 	}
-	
+
 	var targetChildOID types.OidT
-	
+
 	if nodeReader.HasFixedKVSize() {
 		entrySize := 4
 		for i := uint32(0); i < keyCount; i++ {
@@ -242,48 +208,48 @@ func (fs *FileSystemServiceImpl) traverseToInodeLeaf(nodeReader interfaces.BTree
 			if offset+entrySize > len(nodeData) {
 				break
 			}
-			
-			keyOffset := binary.LittleEndian.Uint16(nodeData[offset:offset+2])
-			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2:offset+4])
-			
+
+			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
+			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
+
 			// Extract and parse the key
 			keyStart := btnDataStart + int(keyOffset)
 			if keyStart+8 <= len(nodeData) {
-				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart:keyStart+8])
+				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart : keyStart+8])
 				objID := objIdAndType & types.ObjIdMask
-				
+
 				// If this key's object ID is >= our target, use this child
 				if objID >= uint64(targetOID) {
 					valueStart := btnDataStart + int(valueOffset)
 					if valueStart+8 <= len(nodeData) {
-						targetChildOID = types.OidT(binary.LittleEndian.Uint64(nodeData[valueStart:valueStart+8]))
+						targetChildOID = types.OidT(binary.LittleEndian.Uint64(nodeData[valueStart : valueStart+8]))
 						break
 					}
 				}
 			}
 		}
 	}
-	
+
 	if targetChildOID == 0 {
 		return nil, fmt.Errorf("no suitable child node found for inode %d", targetOID)
 	}
-	
+
 	// Resolve and read the child node
 	physAddr, err := fs.resolver.ResolveVirtualObject(targetChildOID, fs.container.GetSuperblock().NxNextXid-1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve child node: %w", err)
 	}
-	
+
 	childData, err := fs.container.ReadBlock(uint64(physAddr))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read child node: %w", err)
 	}
-	
+
 	childReader, err := btrees.NewBTreeNodeReader(childData, binary.LittleEndian)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse child node: %w", err)
 	}
-	
+
 	// Recursively search the child
 	return fs.searchBTreeNodeForInode(childReader, targetOID)
 }
@@ -293,14 +259,14 @@ func (fs *FileSystemServiceImpl) extractInodeFromLeaf(nodeReader interfaces.BTre
 	tableSpace := nodeReader.TableSpace()
 	nodeData := nodeReader.Data()
 	keyCount := nodeReader.KeyCount()
-	
+
 	btnDataStart := 56
 	tableOffset := btnDataStart + int(tableSpace.Off)
-	
+
 	if tableOffset >= len(nodeData) {
 		return nil, fmt.Errorf("table offset exceeds node data")
 	}
-	
+
 	if nodeReader.HasFixedKVSize() {
 		entrySize := 4
 		for i := uint32(0); i < keyCount; i++ {
@@ -308,32 +274,32 @@ func (fs *FileSystemServiceImpl) extractInodeFromLeaf(nodeReader interfaces.BTre
 			if offset+entrySize > len(nodeData) {
 				break
 			}
-			
-			keyOffset := binary.LittleEndian.Uint16(nodeData[offset:offset+2])
-			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2:offset+4])
-			
+
+			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
+			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
+
 			// Extract key and check if it matches our target inode
 			keyStart := btnDataStart + int(keyOffset)
 			if keyStart+8 <= len(nodeData) {
-				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart:keyStart+8])
+				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart : keyStart+8])
 				objID := objIdAndType & types.ObjIdMask
 				objType := (objIdAndType & types.ObjTypeMask) >> types.ObjTypeShift
-				
+
 				// Check if this is an inode record for our target OID
 				if objID == uint64(targetOID) && objType == uint64(types.ApfsTypeInode) {
 					// Extract the key and value data
 					valueStart := btnDataStart + int(valueOffset)
-					
+
 					// Determine key and value sizes
 					var keyData, valueData []byte
-					
+
 					// For fixed-size entries, we need to determine the actual sizes
 					// This is simplified - in reality we'd need to look at the B-tree info
 					keySize := 8 // Minimum size for JInodeKeyT
 					if keyStart+keySize <= len(nodeData) {
-						keyData = nodeData[keyStart:keyStart+keySize]
+						keyData = nodeData[keyStart : keyStart+keySize]
 					}
-					
+
 					// Value size is variable, read what we can
 					if valueStart < len(nodeData) {
 						// Find the next entry to determine value size, or use remaining data
@@ -342,7 +308,7 @@ func (fs *FileSystemServiceImpl) extractInodeFromLeaf(nodeReader interfaces.BTre
 							// Get next entry's offset to calculate this value's size
 							nextOffset := tableOffset + int(i+1)*entrySize
 							if nextOffset+2 <= len(nodeData) {
-								nextKeyOffset := binary.LittleEndian.Uint16(nodeData[nextOffset:nextOffset+2])
+								nextKeyOffset := binary.LittleEndian.Uint16(nodeData[nextOffset : nextOffset+2])
 								nextKeyStart := btnDataStart + int(nextKeyOffset)
 								valueSize = nextKeyStart - valueStart
 							}
@@ -350,12 +316,12 @@ func (fs *FileSystemServiceImpl) extractInodeFromLeaf(nodeReader interfaces.BTre
 							// Last entry, use remaining data
 							valueSize = len(nodeData) - valueStart
 						}
-						
+
 						if valueSize > 0 && valueStart+valueSize <= len(nodeData) {
-							valueData = nodeData[valueStart:valueStart+valueSize]
+							valueData = nodeData[valueStart : valueStart+valueSize]
 						}
 					}
-					
+
 					if len(keyData) > 0 && len(valueData) > 0 {
 						return &inodeData{
 							key:   keyData,
@@ -366,7 +332,7 @@ func (fs *FileSystemServiceImpl) extractInodeFromLeaf(nodeReader interfaces.BTre
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("inode %d not found in leaf node", targetOID)
 }
 
@@ -572,16 +538,16 @@ func (fs *FileSystemServiceImpl) extractDirectoryEntriesFromBTreeNode(nodeReader
 
 // IsDirectory checks if a path is a directory
 func (fs *FileSystemServiceImpl) IsDirectory(path string) (bool, error) {
-	entry, err := fs.GetFileMetadata(path)
+	node, err := fs.GetInodeByPath(path)
 	if err != nil {
 		return false, err
 	}
-	return entry.IsDir, nil
+	return node.IsDirectory, nil
 }
 
 // Exists checks if a path exists
 func (fs *FileSystemServiceImpl) Exists(path string) (bool, error) {
-	_, err := fs.GetFileMetadata(path)
+	_, err := fs.GetInodeByPath(path)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return false, nil
@@ -594,36 +560,36 @@ func (fs *FileSystemServiceImpl) Exists(path string) (bool, error) {
 // getFileExtents extracts file extents from an inode by looking up extent records
 func (fs *FileSystemServiceImpl) getFileExtents(inodeReader interfaces.InodeReader) ([]ExtentMapping, error) {
 	var extents []ExtentMapping
-	
+
 	// Get the private ID from the inode - this is used to look up extent records
 	privateID := inodeReader.PrivateID()
 	if privateID == 0 {
 		return extents, nil // No data stream
 	}
-	
+
 	// In APFS, file extents are stored as separate records in the volume's B-tree
 	// We need to search for records of type APFS_TYPE_FILE_EXTENT with our private ID
 	// This requires B-tree traversal of the volume's filesystem records
-	
+
 	// For now, implement a simplified version that would need to be expanded
 	// with proper B-tree searching for extent records
-	
+
 	// The actual implementation would:
 	// 1. Search the volume's filesystem B-tree for records with:
-	//    - Object type: APFS_TYPE_FILE_EXTENT 
+	//    - Object type: APFS_TYPE_FILE_EXTENT
 	//    - Object ID: privateID
 	// 2. Parse each JFileExtentKeyT/JFileExtentValT pair
 	// 3. Convert to ExtentMapping structs
-	
+
 	extent, err := fs.findFileExtentForPrivateID(privateID)
 	if err != nil {
 		return extents, nil // No extents found
 	}
-	
+
 	if extent != nil {
 		extents = append(extents, *extent)
 	}
-	
+
 	return extents, nil
 }
 
@@ -634,25 +600,25 @@ func (fs *FileSystemServiceImpl) findFileExtentForPrivateID(privateID uint64) (*
 	if fsTreeOID == 0 {
 		return nil, fmt.Errorf("volume filesystem tree OID is zero")
 	}
-	
+
 	// Resolve the filesystem tree OID to physical address
 	physAddr, err := fs.resolver.ResolveVirtualObject(fsTreeOID, fs.container.GetSuperblock().NxNextXid-1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve filesystem tree OID: %w", err)
 	}
-	
+
 	// Read the filesystem tree root node
 	treeData, err := fs.container.ReadBlock(uint64(physAddr))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read filesystem tree root: %w", err)
 	}
-	
+
 	// Parse as B-tree node
 	nodeReader, err := btrees.NewBTreeNodeReader(treeData, binary.LittleEndian)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse filesystem tree node: %w", err)
 	}
-	
+
 	// Search for file extent records with matching private ID
 	return fs.searchFileSystemTreeForExtents(nodeReader, privateID)
 }
@@ -663,7 +629,7 @@ func (fs *FileSystemServiceImpl) searchFileSystemTreeForExtents(nodeReader inter
 		// For internal nodes, we need to traverse to children
 		return fs.traverseInternalNode(nodeReader, privateID)
 	}
-	
+
 	// For leaf nodes, parse the records looking for file extent records
 	return fs.parseLeafNodeForExtents(nodeReader, privateID)
 }
@@ -674,18 +640,18 @@ func (fs *FileSystemServiceImpl) traverseInternalNode(nodeReader interfaces.BTre
 	tableSpace := nodeReader.TableSpace()
 	nodeData := nodeReader.Data()
 	keyCount := nodeReader.KeyCount()
-	
+
 	// Calculate table offset - table is relative to btn_data which starts at offset 56
 	btnDataStart := 56
 	tableOffset := btnDataStart + int(tableSpace.Off)
-	
+
 	if tableOffset >= len(nodeData) {
 		return nil, fmt.Errorf("table offset exceeds node data")
 	}
-	
+
 	// Parse table entries to find the appropriate child node
 	var targetChildOID types.OidT
-	
+
 	if nodeReader.HasFixedKVSize() {
 		// Fixed-size entries (kvoff_t)
 		entrySize := 4
@@ -694,50 +660,50 @@ func (fs *FileSystemServiceImpl) traverseInternalNode(nodeReader interfaces.BTre
 			if offset+entrySize > len(nodeData) {
 				break
 			}
-			
-			keyOffset := binary.LittleEndian.Uint16(nodeData[offset:offset+2])
-			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2:offset+4])
-			
+
+			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
+			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
+
 			// Extract and parse the key
 			keyStart := btnDataStart + int(keyOffset)
 			if keyStart+16 <= len(nodeData) {
 				// Parse the key as JKeyT to check object ID and type
-				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart:keyStart+8])
+				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart : keyStart+8])
 				objID := objIdAndType & types.ObjIdMask
-				
+
 				// If this key's object ID is >= our target, use this child
 				if objID >= privateID {
 					// Extract child OID from value
 					valueStart := btnDataStart + int(valueOffset)
 					if valueStart+8 <= len(nodeData) {
-						targetChildOID = types.OidT(binary.LittleEndian.Uint64(nodeData[valueStart:valueStart+8]))
+						targetChildOID = types.OidT(binary.LittleEndian.Uint64(nodeData[valueStart : valueStart+8]))
 						break
 					}
 				}
 			}
 		}
 	}
-	
+
 	if targetChildOID == 0 {
 		return nil, fmt.Errorf("no suitable child node found")
 	}
-	
+
 	// Resolve and read the child node
 	physAddr, err := fs.resolver.ResolveVirtualObject(targetChildOID, fs.container.GetSuperblock().NxNextXid-1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve child node: %w", err)
 	}
-	
+
 	childData, err := fs.container.ReadBlock(uint64(physAddr))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read child node: %w", err)
 	}
-	
+
 	childReader, err := btrees.NewBTreeNodeReader(childData, binary.LittleEndian)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse child node: %w", err)
 	}
-	
+
 	// Recursively search the child
 	return fs.searchFileSystemTreeForExtents(childReader, privateID)
 }
@@ -747,14 +713,14 @@ func (fs *FileSystemServiceImpl) parseLeafNodeForExtents(nodeReader interfaces.B
 	tableSpace := nodeReader.TableSpace()
 	nodeData := nodeReader.Data()
 	keyCount := nodeReader.KeyCount()
-	
+
 	btnDataStart := 56
 	tableOffset := btnDataStart + int(tableSpace.Off)
-	
+
 	if tableOffset >= len(nodeData) {
 		return nil, fmt.Errorf("table offset exceeds node data")
 	}
-	
+
 	// Parse table entries looking for file extent records
 	if nodeReader.HasFixedKVSize() {
 		entrySize := 4
@@ -763,32 +729,32 @@ func (fs *FileSystemServiceImpl) parseLeafNodeForExtents(nodeReader interfaces.B
 			if offset+entrySize > len(nodeData) {
 				break
 			}
-			
-			keyOffset := binary.LittleEndian.Uint16(nodeData[offset:offset+2])
-			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2:offset+4])
-			
+
+			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
+			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
+
 			// Extract key and check if it's a file extent record
 			keyStart := btnDataStart + int(keyOffset)
 			if keyStart+16 <= len(nodeData) {
 				// Parse JFileExtentKeyT
-				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart:keyStart+8])
+				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart : keyStart+8])
 				objID := objIdAndType & types.ObjIdMask
 				objType := (objIdAndType & types.ObjTypeMask) >> types.ObjTypeShift
-				
+
 				// Check if this is a file extent record for our private ID
 				if objID == privateID && objType == uint64(types.ApfsTypeFileExtent) {
 					// Extract logical address from key
-					logicalAddr := binary.LittleEndian.Uint64(nodeData[keyStart+8:keyStart+16])
-					
+					logicalAddr := binary.LittleEndian.Uint64(nodeData[keyStart+8 : keyStart+16])
+
 					// Extract value (JFileExtentValT)
 					valueStart := btnDataStart + int(valueOffset)
 					if valueStart+24 <= len(nodeData) {
-						lenAndFlags := binary.LittleEndian.Uint64(nodeData[valueStart:valueStart+8])
-						physBlockNum := binary.LittleEndian.Uint64(nodeData[valueStart+8:valueStart+16])
-						
+						lenAndFlags := binary.LittleEndian.Uint64(nodeData[valueStart : valueStart+8])
+						physBlockNum := binary.LittleEndian.Uint64(nodeData[valueStart+8 : valueStart+16])
+
 						// Extract length from flags field
 						physicalSize := lenAndFlags & types.JFileExtentLenMask
-						
+
 						return &ExtentMapping{
 							LogicalOffset:   logicalAddr,
 							LogicalSize:     physicalSize,
@@ -803,6 +769,350 @@ func (fs *FileSystemServiceImpl) parseLeafNodeForExtents(nodeReader interfaces.B
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("no file extent found for private ID %d", privateID)
+}
+
+// GetInodeByPath gets the inode for a given path and returns FileNode metadata
+func (fs *FileSystemServiceImpl) GetInodeByPath(path string) (*FileNode, error) {
+	path = filepath.Clean(path)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	// Get the inode OID
+	inodeOID, err := fs.getInodeByPath(path)
+	if err != nil {
+		// If we can't get inode by path, try alternative approaches
+		// This handles forensic scenarios where object maps might be incomplete
+		if path == "/" {
+			// For root, try to find it by scanning
+			inodeOID, err = fs.findRootTreeByScanning()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get inode for path %s: %w", path, err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to get inode for path %s: %w", path, err)
+		}
+	}
+
+	// Load inode data
+	inodeData, err := fs.loadInodeData(inodeOID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load inode data: %w", err)
+	}
+
+	// Parse inode
+	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inode: %w", err)
+	}
+
+	// Extract metadata and convert to FileNode
+	return fs.inodeToFileNode(path, inodeOID, inodeReader)
+}
+
+// findRootTreeByScanning scans the container for the root tree B-tree structure
+// This is used when object map lookup fails (forensic/recovery scenarios)
+func (fs *FileSystemServiceImpl) findRootTreeByScanning() (types.OidT, error) {
+	// The root tree OID is stored in volumeSB.ApfsRootTreeOid
+	// In normal scenarios, this is a virtual OID that needs resolving through the object map
+	// In forensic scenarios (empty object maps), we try the OID as a physical address
+	rootTreeOID := types.OidT(fs.volumeSB.ApfsRootTreeOid)
+
+	// Try treating it as a direct physical block address first
+	blockData, err := fs.container.ReadBlock(uint64(rootTreeOID))
+	if err == nil && isValidBTreeNode(blockData) {
+		return rootTreeOID, nil
+	}
+
+	// Try scanning nearby blocks for B-tree node structure
+	for scanOffset := uint64(0); scanOffset < 100; scanOffset++ {
+		blockData, err := fs.container.ReadBlock(uint64(rootTreeOID) + scanOffset)
+		if err == nil && isValidBTreeNode(blockData) {
+			return types.OidT(uint64(rootTreeOID) + scanOffset), nil
+		}
+	}
+
+	return 0, fmt.Errorf("could not locate root tree (OID=%d) via object map or scanning", rootTreeOID)
+}
+
+// isValidBTreeNode checks if a block contains a valid B-tree node structure
+func isValidBTreeNode(data []byte) bool {
+	if len(data) < 64 {
+		return false
+	}
+
+	// B-tree nodes start with obj_phys_t header
+	// Check for valid object header pattern
+	// The flags field at offset 8 should have reasonable values
+	flags := uint32(data[8]) | uint32(data[9])<<8 | uint32(data[10])<<16 | uint32(data[11])<<24
+
+	// Check if this looks like a B-tree node (flags shouldn't be all zeros or all ones)
+	if flags == 0 || flags == 0xFFFFFFFF {
+		return false
+	}
+
+	// Check B-tree specific fields
+	// btn_level at offset 76 should be reasonable (0-20 for most trees)
+	if len(data) >= 78 {
+		level := uint16(data[76]) | uint16(data[77])<<8
+		if level > 100 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// ListDirectoryContents lists all entries in a directory by inode ID
+func (fs *FileSystemServiceImpl) ListDirectoryContents(inodeID uint64) ([]*FileNode, error) {
+	// Load inode data
+	inodeData, err := fs.loadInodeData(types.OidT(inodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load inode data: %w", err)
+	}
+
+	// Parse inode
+	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inode: %w", err)
+	}
+
+	// Check if it's a directory
+	if !inodeReader.IsDirectory() {
+		return nil, fmt.Errorf("inode %d is not a directory", inodeID)
+	}
+
+	// Get directory contents as FileEntry
+	entries, err := fs.listDirectoryContents(types.OidT(inodeID), "/")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list directory contents: %w", err)
+	}
+
+	// Convert FileEntry to FileNode
+	var fileNodes []*FileNode
+	for _, entry := range entries {
+		// Load the entry's inode data to get full metadata
+		entryInodeData, err := fs.loadInodeData(types.OidT(entry.Inode))
+		if err != nil {
+			continue // Skip entries we can't load
+		}
+
+		entryInodeReader, err := file_system_objects.NewInodeReader(entryInodeData.key, entryInodeData.value, binary.LittleEndian)
+		if err != nil {
+			continue // Skip entries we can't parse
+		}
+
+		fileNode, err := fs.inodeToFileNode(entry.Path, types.OidT(entry.Inode), entryInodeReader)
+		if err != nil {
+			continue // Skip entries with errors
+		}
+
+		fileNodes = append(fileNodes, fileNode)
+	}
+
+	return fileNodes, nil
+}
+
+// GetFileExtents gets the physical extent mappings for a file by inode ID
+func (fs *FileSystemServiceImpl) GetFileExtents(inodeID uint64) ([]ExtentMapping, error) {
+	// Load inode data
+	inodeData, err := fs.loadInodeData(types.OidT(inodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load inode data: %w", err)
+	}
+
+	// Parse inode
+	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inode: %w", err)
+	}
+
+	// Get extents
+	extents, err := fs.getFileExtents(inodeReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file extents: %w", err)
+	}
+
+	return extents, nil
+}
+
+// GetFileMetadata gets metadata for a file by inode ID (interface implementation)
+func (fs *FileSystemServiceImpl) GetFileMetadata(inodeID uint64) (*FileNode, error) {
+	// Load inode data
+	inodeData, err := fs.loadInodeData(types.OidT(inodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load inode data: %w", err)
+	}
+
+	// Parse inode
+	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inode: %w", err)
+	}
+
+	// Convert to FileNode and return
+	return fs.inodeToFileNode("", types.OidT(inodeID), inodeReader)
+}
+
+// FindFilesByName searches for files matching a name pattern
+func (fs *FileSystemServiceImpl) FindFilesByName(pattern string, maxResults int) ([]*FileNode, error) {
+	var results []*FileNode
+
+	// Walk the tree from root and search for matching names
+	err := fs.WalkTree("/", func(entry *FileEntry) error {
+		if len(results) >= maxResults {
+			return fmt.Errorf("max results reached")
+		}
+
+		// Simple pattern matching (supports * wildcards)
+		if fs.matchPattern(entry.Name, pattern) {
+			// Load inode data for full metadata
+			inodeData, err := fs.loadInodeData(types.OidT(entry.Inode))
+			if err != nil {
+				return nil // Skip this entry
+			}
+
+			inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+			if err != nil {
+				return nil // Skip this entry
+			}
+
+			fileNode, err := fs.inodeToFileNode(entry.Path, types.OidT(entry.Inode), inodeReader)
+			if err != nil {
+				return nil // Skip this entry
+			}
+
+			results = append(results, fileNode)
+		}
+
+		return nil
+	})
+
+	// If we hit max results, that's not an error
+	if err != nil && err.Error() == "max results reached" {
+		return results, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to search for files: %w", err)
+	}
+
+	return results, nil
+}
+
+// GetParentDirectory gets the parent directory of an inode
+func (fs *FileSystemServiceImpl) GetParentDirectory(inodeID uint64) (*FileNode, error) {
+	// Load inode data to get parent reference
+	inodeData, err := fs.loadInodeData(types.OidT(inodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load inode data: %w", err)
+	}
+
+	// Parse inode
+	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inode: %w", err)
+	}
+
+	// Get parent inode ID from inode - use ParentID() method
+	parentInodeID := inodeReader.ParentID()
+	if parentInodeID == 0 {
+		return nil, fmt.Errorf("inode %d has no parent", inodeID)
+	}
+
+	// Load parent inode data
+	parentInodeData, err := fs.loadInodeData(types.OidT(parentInodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load parent inode data: %w", err)
+	}
+
+	// Parse parent inode
+	parentInodeReader, err := file_system_objects.NewInodeReader(parentInodeData.key, parentInodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse parent inode: %w", err)
+	}
+
+	// Convert to FileNode and return
+	return fs.inodeToFileNode("", types.OidT(parentInodeID), parentInodeReader)
+}
+
+// IsPathAccessible checks if a path is accessible
+func (fs *FileSystemServiceImpl) IsPathAccessible(path string) (bool, error) {
+	path = filepath.Clean(path)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	_, err := fs.getInodeByPath(path)
+	if err != nil {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// Helper method to convert inode data to FileNode
+func (fs *FileSystemServiceImpl) inodeToFileNode(path string, inodeID types.OidT, inodeReader interfaces.InodeReader) (*FileNode, error) {
+	// Extract inode metadata using correct InodeReader API methods
+	mode := inodeReader.Mode()
+	size := uint64(0) // TODO: calculate from file extents or UncompressedSize
+	parentID := inodeReader.ParentID()
+	mtime := inodeReader.ModificationTime()
+	ctime := inodeReader.ChangeTime()
+	atime := inodeReader.AccessTime()
+	btime := inodeReader.CreationTime()
+	uid := uint32(inodeReader.Owner())
+	gid := uint32(inodeReader.Group())
+	hardLinkCount := uint32(inodeReader.NumberOfHardLinks())
+	flags := uint32(inodeReader.Flags())
+
+	isDir := inodeReader.IsDirectory()
+	// Mode bits can indicate symlink: check S_ISLNK (120000 octal)
+	isSymlink := (uint16(mode) & 0o170000) == 0o120000
+	isEncrypted := false // TODO: Check encryption status from extended fields
+
+	return &FileNode{
+		Inode:         uint64(inodeID),
+		Path:          path,
+		Name:          filepath.Base(path),
+		Mode:          uint16(mode),
+		Size:          size,
+		CreatedTime:   btime,
+		ModifiedTime:  mtime,
+		ChangedTime:   ctime,
+		AccessedTime:  atime,
+		UID:           uid,
+		GID:           gid,
+		IsDirectory:   isDir,
+		IsSymlink:     isSymlink,
+		IsEncrypted:   isEncrypted,
+		ParentInode:   parentID,
+		HardLinkCount: hardLinkCount,
+		Flags:         flags,
+	}, nil
+}
+
+// Helper method for pattern matching with * wildcard support
+func (fs *FileSystemServiceImpl) matchPattern(name, pattern string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if strings.Contains(pattern, "*") {
+		parts := strings.Split(pattern, "*")
+		if len(parts) == 2 {
+			if parts[0] == "" && parts[1] == "" {
+				return true
+			}
+			if parts[0] != "" && !strings.HasPrefix(name, parts[0]) {
+				return false
+			}
+			if parts[1] != "" && !strings.HasSuffix(name, parts[1]) {
+				return false
+			}
+			return true
+		}
+	}
+	return name == pattern
 }

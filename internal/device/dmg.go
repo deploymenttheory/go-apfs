@@ -1,12 +1,16 @@
 package device
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/viper"
+
+	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // DMGDevice provides access to APFS containers within DMG files
@@ -31,7 +35,7 @@ func LoadDMGConfig() (*DMGConfig, error) {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
-	viper.AddConfigPath("../..")  // For tests running from subdirectories
+	viper.AddConfigPath("../..") // For tests running from subdirectories
 	viper.AddConfigPath("$HOME/.apfs")
 	viper.AddConfigPath("/etc/apfs")
 
@@ -97,43 +101,133 @@ func OpenDMG(path string, config *DMGConfig) (*DMGDevice, error) {
 }
 
 // detectAPFSOffset tries to find the APFS container within the DMG
+// First attempts to parse GPT partition table to locate APFS partition,
+// then falls back to signature scanning if GPT parsing fails
 func (d *DMGDevice) detectAPFSOffset() (int64, error) {
-	// Read first few KB to look for APFS magic
-	buf := make([]byte, 65536) // 64KB should be enough
+	// Read file in chunks for scanning
+	buf := make([]byte, 2*1024*1024) // 2MB buffer for scanning
 	n, err := d.file.ReadAt(buf, 0)
 	if err != nil && err != io.EOF {
-		return 0, err
+		return 0, fmt.Errorf("failed to read DMG: %w", err)
 	}
 
-	// Look for APFS magic number (NXSB - 0x4253584E in little endian)
-	apfsMagic := []byte{0x4E, 0x58, 0x53, 0x42}
-	
-	// Common offsets to check
-	offsets := []int64{
-		0,     // DMG might be raw APFS
-		20480, // Common GPT partition start (block 40 * 512)
-		32768, // Block 64 * 512
-		65536, // Block 128 * 512
+	fmt.Printf("[DMG] Starting APFS offset detection (file size: %d bytes)\n", d.size)
+
+	// Method 1: Try to parse GPT partition table
+	offset, err := d.parseGPTPartitionTable(buf[:n])
+	if err == nil {
+		fmt.Printf("[DMG] ✓ APFS found via GPT partition table at offset: %d (0x%x)\n", offset, offset)
+		return offset, nil
+	}
+	fmt.Printf("[DMG] GPT parsing failed: %v\n", err)
+
+	// Method 2: Scan common offsets for APFS magic
+	fmt.Printf("[DMG] Attempting signature scan at common offsets...\n")
+	commonOffsets := []struct {
+		offset      int64
+		description string
+	}{
+		{0, "Raw/unpartitioned APFS (no GPT)"},
+		{types.GPTAPFSOffset, "After GPT header and partition entries (LBA 40, standard location)"},
+		{types.NxMinimumContainerSize, "1MB boundary (some alternative formats)"},
 	}
 
-	for _, offset := range offsets {
-		if offset+4 > int64(n) {
+	for _, od := range commonOffsets {
+		if od.offset+int64(types.APFSMagicOffset)+4 > int64(n) {
 			continue
 		}
-		
-		// Check for APFS magic at this offset + 32 bytes (where magic is in nx_superblock_t)
-		magicOffset := offset + 32
-		if magicOffset+4 <= int64(n) {
-			if buf[magicOffset] == apfsMagic[0] &&
-				buf[magicOffset+1] == apfsMagic[1] &&
-				buf[magicOffset+2] == apfsMagic[2] &&
-				buf[magicOffset+3] == apfsMagic[3] {
-				return offset, nil
-			}
+
+		magicBytes := buf[od.offset+int64(types.APFSMagicOffset) : od.offset+int64(types.APFSMagicOffset)+4]
+		magic := uint32(magicBytes[0]) |
+			uint32(magicBytes[1])<<8 |
+			uint32(magicBytes[2])<<16 |
+			uint32(magicBytes[3])<<24
+
+		if magic == types.NxMagic {
+			fmt.Printf("[DMG] ✓ APFS found via signature scan at offset: %d (0x%x) - %s\n",
+				od.offset, od.offset, od.description)
+			return od.offset, nil
 		}
 	}
 
-	return 0, fmt.Errorf("APFS container not found in DMG")
+	// Method 3: Full scan at 4096-byte boundaries (APFS block size)
+	fmt.Printf("[DMG] Attempting full signature scan at 4096-byte boundaries...\n")
+	for i := int64(0); i < int64(n)-int64(types.APFSMagicOffset)-4; i += int64(types.NxDefaultBlockSize) {
+		magicBytes := buf[i+int64(types.APFSMagicOffset) : i+int64(types.APFSMagicOffset)+4]
+		magic := uint32(magicBytes[0]) |
+			uint32(magicBytes[1])<<8 |
+			uint32(magicBytes[2])<<16 |
+			uint32(magicBytes[3])<<24
+
+		if magic == types.NxMagic {
+			fmt.Printf("[DMG] ✓ APFS found via full scan at offset: %d (0x%x)\n", i, i)
+			return i, nil
+		}
+	}
+
+	fmt.Printf("[DMG] ✗ APFS container not found\n")
+	return 0, fmt.Errorf("APFS container not found in DMG file")
+}
+
+// parseGPTPartitionTable parses the GPT header to find APFS partition
+// GPT structure: LBA 0-1 are reserved, LBA 1 contains primary GPT header,
+// LBA 2+ contains partition entries
+func (d *DMGDevice) parseGPTPartitionTable(buf []byte) (int64, error) {
+	// Verify we have enough data
+	if len(buf) < types.GPTEntriesStartOffset+types.GPTEntrySize {
+		return 0, fmt.Errorf("buffer too small for GPT parsing")
+	}
+
+	// Check GPT header signature
+	if len(buf) < types.GPTHeaderOffset+8 {
+		return 0, fmt.Errorf("insufficient data for GPT header signature")
+	}
+
+	gptSignature := string(buf[types.GPTHeaderOffset : types.GPTHeaderOffset+8])
+	if gptSignature != "EFI PART" {
+		return 0, fmt.Errorf("no valid GPT signature found")
+	}
+
+	fmt.Printf("[DMG] Found GPT header signature\n")
+
+	// Parse partition entries looking for APFS
+	// Convert the APFS partition UUID string to byte array (in little-endian format for comparison)
+	// UUID: 7C3457EF-0000-11AA-AA11-00306543ECAC
+	apfsUUID := []byte{0xEF, 0x57, 0x34, 0x7C, 0x00, 0x00, 0xAA, 0x11,
+		0xAA, 0x11, 0x00, 0x30, 0x65, 0x43, 0xEC, 0xAC}
+	// Reference: types.ApfsGptPartitionUUID in efi_jumpstart.go
+
+	// Read up to 128 partition entries
+	for entryIdx := 0; entryIdx < 128; entryIdx++ {
+		entryOffset := types.GPTEntriesStartOffset + (entryIdx * types.GPTEntrySize)
+		if entryOffset+types.GPTEntrySize > len(buf) {
+			break
+		}
+
+		entry := buf[entryOffset : entryOffset+types.GPTEntrySize]
+
+		// First 16 bytes are partition type UUID
+		partTypeUUID := entry[0:16]
+
+		// Check if this is an APFS partition
+		if bytes.Equal(partTypeUUID, apfsUUID) {
+			// Bytes 32-39 contain start LBA (little-endian)
+			startLBA := binary.LittleEndian.Uint64(entry[32:40])
+			// Bytes 40-47 contain end LBA (little-endian)
+			endLBA := binary.LittleEndian.Uint64(entry[40:48])
+
+			startOffset := int64(startLBA) * 512 // Convert LBA to byte offset
+			endOffset := int64(endLBA) * 512
+
+			fmt.Printf("[DMG] Found APFS partition #%d: LBA %d-%d (offset 0x%x-0x%x, size %d MB)\n",
+				entryIdx+1, startLBA, endLBA, startOffset, endOffset,
+				(endOffset-startOffset)/(1024*1024))
+
+			return startOffset, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no APFS partition found in GPT table")
 }
 
 // ReadAt implements io.ReaderAt for the APFS container within the DMG
@@ -186,7 +280,7 @@ func CreateDMGFromAPFS(apfsPath, dmgPath string) error {
 	gptHeader := make([]byte, 20480)
 	// Add minimal GPT structure
 	copy(gptHeader[0:8], []byte("EFI PART")) // GPT header signature
-	
+
 	if _, err := dmgFile.Write(gptHeader); err != nil {
 		return fmt.Errorf("failed to write GPT header: %w", err)
 	}
