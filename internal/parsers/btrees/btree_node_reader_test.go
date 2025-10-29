@@ -7,12 +7,17 @@ import (
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
-// createTestBTreeNodeData creates test B-tree node data
+// createTestBTreeNodeData creates test B-tree node data with valid Fletcher-64 checksum
 func createTestBTreeNodeData(oid types.OidT, xid types.XidT, objType, objSubtype uint32, flags uint16, level uint16, nkeys uint32, endian binary.ByteOrder) []byte {
-	data := make([]byte, 100) // 56 bytes header + some data
+	// Pad to multiple of 4 bytes for Fletcher-64
+	size := 100
+	if size%4 != 0 {
+		size = ((size / 4) + 1) * 4
+	}
+	data := make([]byte, size)
 
-	// Object header (32 bytes)
-	copy(data[0:8], []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}) // Checksum
+	// Object header (32 bytes) - start with zero checksum
+	// Checksum at 0:8 will be filled later
 	endian.PutUint64(data[8:16], uint64(oid))
 	endian.PutUint64(data[16:24], uint64(xid))
 	endian.PutUint32(data[24:28], objType)
@@ -44,7 +49,56 @@ func createTestBTreeNodeData(oid types.OidT, xid types.XidT, objType, objSubtype
 		data[i] = byte(i - 56)
 	}
 
+	// Calculate and set the Fletcher-64 checksum
+	checksum := calculateFletcherChecksum(data)
+	copy(data[0:8], checksum[:])
+
 	return data
+}
+
+// calculateFletcherChecksum calculates Fletcher-64 checksum for test data
+// This is a simplified version for testing purposes
+func calculateFletcherChecksum(data []byte) [8]byte {
+	const maxUint32 = uint64(0xFFFFFFFF)
+	const chunkSize = 1024
+
+	var sum1, sum2 uint64
+
+	// Make a copy with zeroed checksum field
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+	for i := 0; i < 8; i++ {
+		dataCopy[i] = 0
+	}
+
+	// Process data in chunks of 32-bit words
+	for offset := 0; offset < len(dataCopy); offset += chunkSize * 4 {
+		chunkEnd := offset + chunkSize*4
+		if chunkEnd > len(dataCopy) {
+			chunkEnd = len(dataCopy)
+		}
+
+		for i := offset; i < chunkEnd; i += 4 {
+			if i+4 > len(dataCopy) {
+				break
+			}
+			word := binary.LittleEndian.Uint32(dataCopy[i : i+4])
+			sum1 += uint64(word)
+			sum2 += sum1
+		}
+
+		sum1 %= maxUint32
+		sum2 %= maxUint32
+	}
+
+	// Calculate final checksum
+	ckLow := maxUint32 - ((sum1 + sum2) % maxUint32)
+	ckHigh := maxUint32 - ((sum1 + ckLow) % maxUint32)
+	result := ckLow | (ckHigh << 32)
+
+	var checksum [8]byte
+	binary.LittleEndian.PutUint64(checksum[:], result)
+	return checksum
 }
 
 // TestBTreeNodeReader tests all B-tree node reader method implementations
@@ -241,6 +295,10 @@ func TestBTreeNodeReader_MinimumSize(t *testing.T) {
 
 	// Trim to minimum size
 	data = data[:56]
+
+	// Recalculate checksum for the trimmed data
+	checksum := calculateFletcherChecksum(data)
+	copy(data[0:8], checksum[:])
 
 	bnr, err := NewBTreeNodeReader(data, endian)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
+	"github.com/deploymenttheory/go-apfs/internal/parsers/objects"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
@@ -24,6 +25,13 @@ func NewBTreeNodeReader(data []byte, endian binary.ByteOrder) (interfaces.BTreeN
 	node, err := parseBTreeNode(data, endian)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse B-tree node: %w", err)
+	}
+
+	// Verify Fletcher-64 checksum for metadata integrity
+	// APFS uses checksums for all metadata structures including B-tree nodes
+	checksumVerifier := objects.NewChecksumInspector(&node.BtnO, data)
+	if !checksumVerifier.VerifyChecksum() {
+		return nil, fmt.Errorf("B-tree node checksum verification failed (OID: %d, XID: %d)", node.BtnO.OOid, node.BtnO.OXid)
 	}
 
 	return &btreeNodeReader{

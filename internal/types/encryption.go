@@ -263,6 +263,27 @@ var ApfsFvPersonalRecoveryKeyUuid = UUID{
 	0x65, 0x43, 0xEC, 0xAC,
 }
 
+// ApfsFvInstitutionalRecoveryKeyUuid is the UUID used for institutional recovery keys.
+// Reference: APFS Advent Challenge Day 15
+// The institutional recovery key allows organizations to recover encrypted volumes
+// using a centrally-managed recovery key.
+var ApfsFvInstitutionalRecoveryKeyUuid = UUID{
+	0xC0, 0x64, 0xEB, 0xC6,
+	0x00, 0x00, 0x11, 0xAA,
+	0xAA, 0x11, 0x00, 0x30,
+	0x65, 0x43, 0xEC, 0xAC,
+}
+
+// ApfsFvInstitutionalUserUuid is the UUID used for institutional user recovery.
+// Reference: APFS Advent Challenge Day 15
+// This UUID is used in volume keybags for institutional recovery scenarios.
+var ApfsFvInstitutionalUserUuid = UUID{
+	0x2F, 0xA3, 0x14, 0x00,
+	0xBA, 0xFF, 0x4D, 0xE7,
+	0xAE, 0x2A, 0xC3, 0xAA,
+	0x6E, 0x1F, 0xD3, 0x40,
+}
+
 // MediaKeybagT is a keybag, wrapped up as a container-layer object.
 // Reference: page 147
 type MediaKeybagT struct {

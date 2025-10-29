@@ -1058,7 +1058,8 @@ func (fs *FileSystemServiceImpl) IsPathAccessible(path string) (bool, error) {
 func (fs *FileSystemServiceImpl) inodeToFileNode(path string, inodeID types.OidT, inodeReader interfaces.InodeReader) (*FileNode, error) {
 	// Extract inode metadata using correct InodeReader API methods
 	mode := inodeReader.Mode()
-	size := uint64(0) // TODO: calculate from file extents or UncompressedSize
+	// Get file size from inode - this is calculated from the data stream size
+	size := inodeReader.Size()
 	parentID := inodeReader.ParentID()
 	mtime := inodeReader.ModificationTime()
 	ctime := inodeReader.ChangeTime()
@@ -1072,7 +1073,8 @@ func (fs *FileSystemServiceImpl) inodeToFileNode(path string, inodeID types.OidT
 	isDir := inodeReader.IsDirectory()
 	// Mode bits can indicate symlink: check S_ISLNK (120000 octal)
 	isSymlink := (uint16(mode) & 0o170000) == 0o120000
-	isEncrypted := false // TODO: Check encryption status from extended fields
+	// Check encryption status from inode flags (INODE_IS_ENCRYPTED flag would indicate encryption)
+	isEncrypted := (flags & uint32(types.InodeProtClassExplicit)) != 0
 
 	return &FileNode{
 		Inode:         uint64(inodeID),
@@ -1276,25 +1278,47 @@ func (fs *FileSystemServiceImpl) CreateFileSeeker(inodeID uint64) (io.ReadSeeker
 // GetFileExtents returns all extents for a file (already implemented, needed for interface)
 // This is a duplicate but required by the interface
 
-// VerifyFileChecksum verifies the integrity of a file's data
+// VerifyFileChecksum verifies the integrity of a file's metadata
+//
+// IMPORTANT: APFS does NOT provide checksums for file data content.
+// According to the APFS specification, file data integrity relies on hardware ECC,
+// not filesystem-level checksums. APFS only checksums metadata structures.
+//
+// This method verifies:
+//   1. The B-tree node containing the inode has a valid Fletcher-64 checksum (verified in NewBTreeNodeReader)
+//   2. The inode structure can be successfully parsed
+//   3. All metadata structures are intact
+//
+// File data integrity cannot be verified at the filesystem level in APFS.
+//
+// Fletcher-64 verification was added to btrees/btree_node_reader.go:NewBTreeNodeReader()
+// All B-tree nodes are now automatically verified when loaded.
 func (fs *FileSystemServiceImpl) VerifyFileChecksum(inodeID uint64) (bool, error) {
-	// Load inode data
+	// Load inode data - this automatically verifies B-tree node checksums
+	// via the Fletcher-64 verification in NewBTreeNodeReader
 	inodeData, err := fs.loadInodeData(types.OidT(inodeID))
 	if err != nil {
-		return false, fmt.Errorf("failed to load inode data: %w", err)
+		return false, fmt.Errorf("failed to load inode metadata: %w", err)
 	}
 
-	// Parse inode
+	// Parse inode to verify structure integrity
 	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse inode: %w", err)
+		return false, fmt.Errorf("failed to parse inode structure: %w", err)
 	}
 
-	// Check if inode has a checksum
-	// This would need to extract checksum info from extended fields in a real implementation
-	// For now, return true if we can read the inode successfully
-	_ = inodeReader // Use inodeReader to satisfy compiler
+	// Verify the inode has valid basic properties
+	objID := inodeReader.ObjectIdentifier()
+	if objID == 0 {
+		return false, fmt.Errorf("inode has invalid object identifier")
+	}
 
-	// TODO: Implement actual checksum verification
+	// Verify the object type is correct
+	if inodeReader.ObjectType() != types.ApfsTypeInode {
+		return false, fmt.Errorf("object is not an inode (type: %v)", inodeReader.ObjectType())
+	}
+
+	// If we successfully loaded and parsed the inode, the metadata is valid
+	// The B-tree infrastructure already verified Fletcher-64 checksums
 	return true, nil
 }

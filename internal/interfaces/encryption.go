@@ -97,6 +97,12 @@ type KeybagEntryReader interface {
 	// IsPersonalRecoveryKey checks if this entry contains a personal recovery key
 	IsPersonalRecoveryKey() bool
 
+	// IsInstitutionalRecoveryKey checks if this entry contains an institutional recovery key
+	IsInstitutionalRecoveryKey() bool
+
+	// IsInstitutionalUser checks if this entry is for an institutional user
+	IsInstitutionalUser() bool
+
 	// IsVolumeKey checks if this entry contains a volume encryption key
 	IsVolumeKey() bool
 

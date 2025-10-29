@@ -231,12 +231,14 @@ func TestKeybagEntryReaderMethods(t *testing.T) {
 	endian := binary.LittleEndian
 
 	tests := []struct {
-		name                   string
-		entry                  TestKeybagEntry
-		expectedIsPersonalKey  bool
-		expectedIsVolumeKey    bool
-		expectedIsUnlockRecord bool
-		expectedTagDescription string
+		name                            string
+		entry                           TestKeybagEntry
+		expectedIsPersonalKey           bool
+		expectedIsInstitutionalKey      bool
+		expectedIsInstitutionalUser     bool
+		expectedIsVolumeKey             bool
+		expectedIsUnlockRecord          bool
+		expectedTagDescription          string
 	}{
 		{
 			name: "Volume key entry",
@@ -245,10 +247,12 @@ func TestKeybagEntryReaderMethods(t *testing.T) {
 				Tag:     types.KbTagVolumeKey,
 				KeyData: []byte{0xDE, 0xAD, 0xBE, 0xEF},
 			},
-			expectedIsPersonalKey:  false,
-			expectedIsVolumeKey:    true,
-			expectedIsUnlockRecord: false,
-			expectedTagDescription: "Volume Key",
+			expectedIsPersonalKey:       false,
+			expectedIsInstitutionalKey:  false,
+			expectedIsInstitutionalUser: false,
+			expectedIsVolumeKey:         true,
+			expectedIsUnlockRecord:      false,
+			expectedTagDescription:      "Volume Key",
 		},
 		{
 			name: "Personal recovery key entry",
@@ -257,10 +261,12 @@ func TestKeybagEntryReaderMethods(t *testing.T) {
 				Tag:     types.KbTagVolumeUnlockRecords,
 				KeyData: []byte("recovery-key"),
 			},
-			expectedIsPersonalKey:  true,
-			expectedIsVolumeKey:    false,
-			expectedIsUnlockRecord: true,
-			expectedTagDescription: "Volume Unlock Records",
+			expectedIsPersonalKey:       true,
+			expectedIsInstitutionalKey:  false,
+			expectedIsInstitutionalUser: false,
+			expectedIsVolumeKey:         false,
+			expectedIsUnlockRecord:      true,
+			expectedTagDescription:      "Volume Unlock Records",
 		},
 		{
 			name: "Unlock records entry",
@@ -269,10 +275,40 @@ func TestKeybagEntryReaderMethods(t *testing.T) {
 				Tag:     types.KbTagVolumeUnlockRecords,
 				KeyData: []byte{0x12, 0x34},
 			},
-			expectedIsPersonalKey:  false,
-			expectedIsVolumeKey:    false,
-			expectedIsUnlockRecord: true,
-			expectedTagDescription: "Volume Unlock Records",
+			expectedIsPersonalKey:       false,
+			expectedIsInstitutionalKey:  false,
+			expectedIsInstitutionalUser: false,
+			expectedIsVolumeKey:         false,
+			expectedIsUnlockRecord:      true,
+			expectedTagDescription:      "Volume Unlock Records",
+		},
+		{
+			name: "Institutional recovery key entry",
+			entry: TestKeybagEntry{
+				UUID:    types.ApfsFvInstitutionalRecoveryKeyUuid,
+				Tag:     types.KbTagVolumeUnlockRecords,
+				KeyData: []byte("institutional-key"),
+			},
+			expectedIsPersonalKey:       false,
+			expectedIsInstitutionalKey:  true,
+			expectedIsInstitutionalUser: false,
+			expectedIsVolumeKey:         false,
+			expectedIsUnlockRecord:      true,
+			expectedTagDescription:      "Volume Unlock Records",
+		},
+		{
+			name: "Institutional user entry",
+			entry: TestKeybagEntry{
+				UUID:    types.ApfsFvInstitutionalUserUuid,
+				Tag:     types.KbTagVolumeUnlockRecords,
+				KeyData: []byte("institutional-user-key"),
+			},
+			expectedIsPersonalKey:       false,
+			expectedIsInstitutionalKey:  false,
+			expectedIsInstitutionalUser: true,
+			expectedIsVolumeKey:         false,
+			expectedIsUnlockRecord:      true,
+			expectedTagDescription:      "Volume Unlock Records",
 		},
 		{
 			name: "Passphrase hint entry",
@@ -281,10 +317,12 @@ func TestKeybagEntryReaderMethods(t *testing.T) {
 				Tag:     types.KbTagVolumePassphraseHint,
 				KeyData: []byte("password hint"),
 			},
-			expectedIsPersonalKey:  false,
-			expectedIsVolumeKey:    false,
-			expectedIsUnlockRecord: false,
-			expectedTagDescription: "Volume Passphrase Hint",
+			expectedIsPersonalKey:       false,
+			expectedIsInstitutionalKey:  false,
+			expectedIsInstitutionalUser: false,
+			expectedIsVolumeKey:         false,
+			expectedIsUnlockRecord:      false,
+			expectedTagDescription:      "Volume Passphrase Hint",
 		},
 	}
 
@@ -306,6 +344,14 @@ func TestKeybagEntryReaderMethods(t *testing.T) {
 
 			if entry.IsPersonalRecoveryKey() != tc.expectedIsPersonalKey {
 				t.Errorf("IsPersonalRecoveryKey() = %t, want %t", entry.IsPersonalRecoveryKey(), tc.expectedIsPersonalKey)
+			}
+
+			if entry.IsInstitutionalRecoveryKey() != tc.expectedIsInstitutionalKey {
+				t.Errorf("IsInstitutionalRecoveryKey() = %t, want %t", entry.IsInstitutionalRecoveryKey(), tc.expectedIsInstitutionalKey)
+			}
+
+			if entry.IsInstitutionalUser() != tc.expectedIsInstitutionalUser {
+				t.Errorf("IsInstitutionalUser() = %t, want %t", entry.IsInstitutionalUser(), tc.expectedIsInstitutionalUser)
 			}
 
 			if entry.IsVolumeKey() != tc.expectedIsVolumeKey {

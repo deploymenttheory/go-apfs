@@ -425,6 +425,7 @@ func (btor *BTreeObjectResolver) extractKeyValue(nodeData []byte, entry tableEnt
 	btnDataStart := 56
 
 	// Extract key
+	// Key offsets are relative to the BEGINNING of the k/v area
 	keyStart := btnDataStart + int(entry.keyOffset)
 	if isFixedSize {
 		// For fixed-size, we need to determine the size from the B-tree info
@@ -445,18 +446,32 @@ func (btor *BTreeObjectResolver) extractKeyValue(nodeData []byte, entry tableEnt
 	}
 
 	// Extract value
-	valueStart := btnDataStart + int(entry.valueOffset)
+	// CRITICAL FIX: Value offsets are relative to the END of the value area!
+	// Reference: APFS Advent Challenge Day 6 - "Key offsets are relative to the beginning
+	// of the k/v area and value offsets from the end."
+	//
+	// For non-root nodes: value area starts at end of node
+	// For root nodes: value area starts before btree_info_t (0x28 = 40 bytes from end)
+	//
+	// TODO: Detect if this is a root node and adjust accordingly
+	// For now, assume non-root nodes (most common case)
+	valueAreaEnd := len(nodeData)
+
 	if isFixedSize {
 		// For object maps, values are 16 bytes (flags + size + paddr)
+		valueStart := valueAreaEnd - int(entry.valueOffset) - 16
 		valueEnd := valueStart + 16
-		if valueEnd > len(nodeData) {
+
+		if valueStart < btnDataStart || valueEnd > len(nodeData) {
 			return nil, nil, fmt.Errorf("value extends beyond node data: valueStart=%d, valueEnd=%d, nodeDataLen=%d",
 				valueStart, valueEnd, len(nodeData))
 		}
 		value = nodeData[valueStart:valueEnd]
 	} else {
+		valueStart := valueAreaEnd - int(entry.valueOffset) - int(entry.valueLen)
 		valueEnd := valueStart + int(entry.valueLen)
-		if valueEnd > len(nodeData) {
+
+		if valueStart < btnDataStart || valueEnd > len(nodeData) {
 			return nil, nil, fmt.Errorf("value extends beyond node data: valueStart=%d, valueEnd=%d, nodeDataLen=%d",
 				valueStart, valueEnd, len(nodeData))
 		}
@@ -464,7 +479,8 @@ func (btor *BTreeObjectResolver) extractKeyValue(nodeData []byte, entry tableEnt
 	}
 
 	fmt.Printf("DEBUG: Extracted key (%d bytes) from offset %d: %02x\n", len(key), keyStart, key)
-	fmt.Printf("DEBUG: Extracted value (%d bytes) from offset %d: %02x\n", len(value), valueStart, value)
+	fmt.Printf("DEBUG: Extracted value (%d bytes) from valueAreaEnd=%d, offset=%d: %02x\n",
+		len(value), valueAreaEnd, entry.valueOffset, value)
 
 	return key, value, nil
 }

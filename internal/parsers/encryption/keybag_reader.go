@@ -241,6 +241,16 @@ func (ker *keybagEntryReader) IsPersonalRecoveryKey() bool {
 	return ker.entry.KeUuid == types.ApfsFvPersonalRecoveryKeyUuid
 }
 
+// IsInstitutionalRecoveryKey checks if this entry contains an institutional recovery key
+func (ker *keybagEntryReader) IsInstitutionalRecoveryKey() bool {
+	return ker.entry.KeUuid == types.ApfsFvInstitutionalRecoveryKeyUuid
+}
+
+// IsInstitutionalUser checks if this entry is for an institutional user
+func (ker *keybagEntryReader) IsInstitutionalUser() bool {
+	return ker.entry.KeUuid == types.ApfsFvInstitutionalUserUuid
+}
+
 // IsVolumeKey checks if this entry contains a volume encryption key
 func (ker *keybagEntryReader) IsVolumeKey() bool {
 	return types.KbTag(ker.entry.KeTag) == types.KbTagVolumeKey
