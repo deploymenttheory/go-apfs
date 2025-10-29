@@ -13,6 +13,7 @@ import (
 type BTreeService struct {
 	container *ContainerReader
 	resolver  *BTreeObjectResolver
+	cache     *ObjectMapBTreeCache
 }
 
 // NewBTreeService creates a new B-tree service
@@ -20,6 +21,16 @@ func NewBTreeService(container *ContainerReader) *BTreeService {
 	return &BTreeService{
 		container: container,
 		resolver:  NewBTreeObjectResolver(container),
+		cache:     NewObjectMapBTreeCache(DefaultCacheConfig()),
+	}
+}
+
+// NewBTreeServiceWithCache creates a new B-tree service with custom cache settings
+func NewBTreeServiceWithCache(container *ContainerReader, config CacheConfig) *BTreeService {
+	return &BTreeService{
+		container: container,
+		resolver:  NewBTreeObjectResolver(container),
+		cache:     NewObjectMapBTreeCache(config),
 	}
 }
 
@@ -34,22 +45,10 @@ type FSRecord struct {
 
 // GetFSRecordsForOID gets all filesystem records for a given object ID
 func (bt *BTreeService) GetFSRecordsForOID(rootTreeOID types.OidT, targetOID types.OidT, maxXID types.XidT) ([]FSRecord, error) {
-	// Resolve the root tree OID to get the filesystem B-tree root
-	physAddr, err := bt.resolver.ResolveVirtualObject(rootTreeOID, maxXID)
+	// Get root node using cache
+	rootNode, err := bt.GetRootNode(rootTreeOID, maxXID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve root tree OID %d: %w", rootTreeOID, err)
-	}
-
-	// Read the root B-tree node
-	rootData, err := bt.container.ReadBlock(uint64(physAddr))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read root B-tree node: %w", err)
-	}
-
-	// Parse the root node
-	rootNode, err := btrees.NewBTreeNodeReader(rootData, binary.LittleEndian)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse root B-tree node: %w", err)
+		return nil, fmt.Errorf("failed to get root B-tree node: %w", err)
 	}
 
 	// Search the B-tree for records matching the target OID
@@ -65,9 +64,9 @@ func (bt *BTreeService) GetOMapEntry(omapTreeOID types.OidT, virtualOID types.Oi
 	}
 
 	return &OMapEntry{
-		VirtualOID:  virtualOID,
+		VirtualOID:   virtualOID,
 		PhysicalAddr: physAddr,
-		XID:         maxXID,
+		XID:          maxXID,
 	}, nil
 }
 
@@ -132,13 +131,13 @@ func (bt *BTreeService) extractFSRecordsFromLeaf(node interfaces.BTreeNodeReader
 				break
 			}
 
-			keyOffset := binary.LittleEndian.Uint16(nodeData[offset:offset+2])
-			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2:offset+4])
+			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
+			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
 
 			// Extract key and check if it matches our criteria
 			keyStart := btnDataStart + int(keyOffset)
 			if keyStart+8 <= len(nodeData) {
-				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart:keyStart+8])
+				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart : keyStart+8])
 				objID := objIdAndType & types.ObjIdMask
 				objType := types.JObjTypes((objIdAndType & types.ObjTypeMask) >> types.ObjTypeShift)
 
@@ -188,7 +187,7 @@ func (bt *BTreeService) extractKeyValueData(nodeData []byte, keyStart, valueStar
 		// Get next entry's key offset to calculate this value's size
 		nextOffset := tableOffset + int(entryIndex+1)*entrySize
 		if nextOffset+2 <= len(nodeData) {
-			nextKeyOffset := binary.LittleEndian.Uint16(nodeData[nextOffset:nextOffset+2])
+			nextKeyOffset := binary.LittleEndian.Uint16(nodeData[nextOffset : nextOffset+2])
 			nextKeyStart := 56 + int(nextKeyOffset) // btn_data start + offset
 			valueSize = nextKeyStart - valueStart
 		}
@@ -227,20 +226,20 @@ func (bt *BTreeService) findChildrenForOID(node interfaces.BTreeNodeReader, targ
 				break
 			}
 
-			keyOffset := binary.LittleEndian.Uint16(nodeData[offset:offset+2])
-			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2:offset+4])
+			keyOffset := binary.LittleEndian.Uint16(nodeData[offset : offset+2])
+			valueOffset := binary.LittleEndian.Uint16(nodeData[offset+2 : offset+4])
 
 			// Extract key to check OID range
 			keyStart := btnDataStart + int(keyOffset)
 			if keyStart+8 <= len(nodeData) {
-				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart:keyStart+8])
+				objIdAndType := binary.LittleEndian.Uint64(nodeData[keyStart : keyStart+8])
 				objID := objIdAndType & types.ObjIdMask
 
 				// If this key's OID is >= our target, this child might contain our target
 				if objID >= uint64(targetOID) {
 					valueStart := btnDataStart + int(valueOffset)
 					if valueStart+8 <= len(nodeData) {
-						childOID := types.OidT(binary.LittleEndian.Uint64(nodeData[valueStart:valueStart+8]))
+						childOID := types.OidT(binary.LittleEndian.Uint64(nodeData[valueStart : valueStart+8]))
 						children = append(children, childOID)
 					}
 				}
@@ -253,25 +252,13 @@ func (bt *BTreeService) findChildrenForOID(node interfaces.BTreeNodeReader, targ
 
 // searchChildNodeForFSRecords searches a child node for filesystem records
 func (bt *BTreeService) searchChildNodeForFSRecords(childOID types.OidT, targetOID types.OidT, maxXID types.XidT) ([]FSRecord, error) {
-	// Resolve child OID to physical address
-	physAddr, err := bt.resolver.ResolveVirtualObject(childOID, maxXID)
+	// Get child node using cache
+	childNode, err := bt.GetChildNode(childOID, maxXID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve child OID %d: %w", childOID, err)
+		return nil, fmt.Errorf("failed to get child B-tree node with OID %d: %w", childOID, err)
 	}
 
-	// Read child node
-	childData, err := bt.container.ReadBlock(uint64(physAddr))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read child node: %w", err)
-	}
-
-	// Parse child node
-	childNode, err := btrees.NewBTreeNodeReader(childData, binary.LittleEndian)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse child node: %w", err)
-	}
-
-	// Recursively search the child
+	// Recursively search this child node
 	return bt.searchBTreeForFSRecords(childNode, targetOID, maxXID)
 }
 
@@ -288,7 +275,7 @@ func (bt *BTreeService) ParseDirectoryRecord(record FSRecord) (*DirectoryRecord,
 	}
 
 	fileID := binary.LittleEndian.Uint64(record.ValueData[0:8])
-	
+
 	// Extract name from key data (simplified)
 	name := "unknown" // Would parse from JDrecHashedKeyT structure
 	if len(record.KeyData) > 16 {
@@ -339,4 +326,128 @@ type InodeRecord struct {
 	CreateTime uint64
 	ModTime    uint64
 	Mode       uint16
+}
+
+// GetRootNode retrieves the root B-tree node with caching
+func (bt *BTreeService) GetRootNode(rootTreeOID types.OidT, maxXID types.XidT) (interfaces.BTreeNodeReader, error) {
+	// Try to get from cache first
+	if cachedNode, found := bt.cache.GetNode(rootTreeOID); found {
+		return cachedNode, nil
+	}
+
+	// Resolve the root tree OID to get physical address
+	physAddr, err := bt.resolver.ResolveVirtualObject(rootTreeOID, maxXID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve root tree OID %d: %w", rootTreeOID, err)
+	}
+
+	// Try to get block from cache first
+	var blockData []byte
+	if cached, found := bt.cache.GetBlock(uint64(physAddr)); found {
+		blockData = cached
+	} else {
+		// Read from container
+		var readErr error
+		blockData, readErr = bt.container.ReadBlock(uint64(physAddr))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read root B-tree node at address %d: %w", physAddr, readErr)
+		}
+		// Cache the block
+		bt.cache.PutBlock(uint64(physAddr), blockData)
+	}
+
+	// Parse the B-tree node
+	node, err := btrees.NewBTreeNodeReader(blockData, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse root B-tree node: %w", err)
+	}
+
+	// Cache the parsed node
+	bt.cache.PutNode(rootTreeOID, node)
+
+	return node, nil
+}
+
+// GetChildNode retrieves a child B-tree node with caching
+func (bt *BTreeService) GetChildNode(childOID types.OidT, maxXID types.XidT) (interfaces.BTreeNodeReader, error) {
+	// Try to get from node cache first
+	if cachedNode, found := bt.cache.GetNode(childOID); found {
+		return cachedNode, nil
+	}
+
+	// Resolve the child OID to get physical address
+	physAddr, err := bt.resolver.ResolveVirtualObject(childOID, maxXID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve child OID %d: %w", childOID, err)
+	}
+
+	// Try to get block from cache
+	var blockData []byte
+	if cached, found := bt.cache.GetBlock(uint64(physAddr)); found {
+		blockData = cached
+	} else {
+		// Read from container
+		var readErr error
+		blockData, readErr = bt.container.ReadBlock(uint64(physAddr))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read child B-tree node at address %d: %w", physAddr, readErr)
+		}
+		// Cache the block
+		bt.cache.PutBlock(uint64(physAddr), blockData)
+	}
+
+	// Parse the B-tree node
+	node, err := btrees.NewBTreeNodeReader(blockData, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse child B-tree node: %w", err)
+	}
+
+	// Cache the parsed node
+	bt.cache.PutNode(childOID, node)
+
+	return node, nil
+}
+
+// GetCacheStats returns current cache statistics
+func (bt *BTreeService) GetCacheStats() CacheStatistics {
+	stats := bt.cache.GetStats()
+	return CacheStatistics{
+		NodeCachedCount:  stats.NodeCachedCount,
+		NodeHits:         stats.NodeHits,
+		NodeMisses:       stats.NodeMisses,
+		NodeHitRate:      stats.NodeHitRate,
+		NodeEvictions:    stats.NodeEvictions,
+		BlockCachedCount: stats.BlockCachedCount,
+		BlockCachedSize:  stats.BlockCachedSize,
+		BlockHits:        stats.BlockHits,
+		BlockMisses:      stats.BlockMisses,
+		BlockHitRate:     stats.BlockHitRate,
+		BlockEvictions:   stats.BlockEvictions,
+	}
+}
+
+// InvalidateCacheEntry invalidates a specific node from cache
+func (bt *BTreeService) InvalidateCacheEntry(oid types.OidT) {
+	bt.cache.InvalidateNode(oid)
+}
+
+// ClearCache clears all cached data
+func (bt *BTreeService) ClearCache() {
+	bt.cache.ClearNodeCache()
+	bt.cache.ClearBlockCache()
+}
+
+// CacheStatistics represents cache statistics
+type CacheStatistics struct {
+	NodeCachedCount  int
+	NodeHits         int64
+	NodeMisses       int64
+	NodeHitRate      float64
+	NodeEvictions    int64
+	BlockCachedCount int
+	BlockCachedSize  int64
+	BlockHits        int64
+	BlockMisses      int64
+	BlockHitRate     float64
+	BlockEvictions   int64
 }

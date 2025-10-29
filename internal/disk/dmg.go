@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -15,9 +17,25 @@ import (
 
 // DMGDevice provides access to APFS containers within DMG files
 type DMGDevice struct {
-	file   *os.File
-	size   int64
-	offset int64 // Offset to APFS container within DMG
+	file             *os.File
+	size             int64
+	offset           int64 // Offset to APFS container within DMG
+	blockCache       map[uint64][]byte
+	cacheMutex       sync.RWMutex
+	maxCacheSize     int64
+	currentCacheSize int64
+	stats            *DMGStatistics
+}
+
+// DMGStatistics tracks DMG access statistics
+type DMGStatistics struct {
+	offsetDetectionTime time.Duration
+	offsetMethod        string
+	blocksRead          int64
+	bytesRead           int64
+	cacheHits           int64
+	cacheMisses         int64
+	mu                  sync.RWMutex
 }
 
 // DMGConfig holds configuration for DMG handling
@@ -80,35 +98,46 @@ func OpenDMG(path string, config *DMGConfig) (*DMGDevice, error) {
 	}
 
 	device := &DMGDevice{
-		file: file,
-		size: stat.Size(),
+		file:             file,
+		size:             stat.Size(),
+		blockCache:       make(map[uint64][]byte),
+		maxCacheSize:     int64(config.CacheSize) * 1024 * 1024,
+		currentCacheSize: 0,
+		stats: &DMGStatistics{
+			offsetMethod: "unknown",
+		},
 	}
 
 	// Try to detect APFS container automatically
 	if config.AutoDetectAPFS {
-		offset, err := device.detectAPFSOffset()
+		startTime := time.Now()
+		offset, method, err := device.detectAPFSOffsetWithMethod()
+		device.stats.offsetDetectionTime = time.Since(startTime)
+		device.stats.offsetMethod = method
 		if err != nil {
 			// Fall back to default offset
 			device.offset = config.DefaultOffset
+			device.stats.offsetMethod = "fallback"
+			fmt.Printf("[DMG] Using fallback offset: %d\n", device.offset)
 		} else {
 			device.offset = offset
+			fmt.Printf("[DMG] Detection complete via %s in %v\n", method, device.stats.offsetDetectionTime)
 		}
 	} else {
 		device.offset = config.DefaultOffset
+		device.stats.offsetMethod = "configured"
 	}
 
 	return device, nil
 }
 
-// detectAPFSOffset tries to find the APFS container within the DMG
-// First attempts to parse GPT partition table to locate APFS partition,
-// then falls back to signature scanning if GPT parsing fails
-func (d *DMGDevice) detectAPFSOffset() (int64, error) {
+// detectAPFSOffsetWithMethod tries to find the APFS container and returns the detection method
+func (d *DMGDevice) detectAPFSOffsetWithMethod() (int64, string, error) {
 	// Read file in chunks for scanning
 	buf := make([]byte, 2*1024*1024) // 2MB buffer for scanning
 	n, err := d.file.ReadAt(buf, 0)
 	if err != nil && err != io.EOF {
-		return 0, fmt.Errorf("failed to read DMG: %w", err)
+		return 0, "", fmt.Errorf("failed to read DMG: %w", err)
 	}
 
 	fmt.Printf("[DMG] Starting APFS offset detection (file size: %d bytes)\n", d.size)
@@ -117,7 +146,7 @@ func (d *DMGDevice) detectAPFSOffset() (int64, error) {
 	offset, err := d.parseGPTPartitionTable(buf[:n])
 	if err == nil {
 		fmt.Printf("[DMG] ✓ APFS found via GPT partition table at offset: %d (0x%x)\n", offset, offset)
-		return offset, nil
+		return offset, "gpt", nil
 	}
 	fmt.Printf("[DMG] GPT parsing failed: %v\n", err)
 
@@ -146,7 +175,7 @@ func (d *DMGDevice) detectAPFSOffset() (int64, error) {
 		if magic == types.NxMagic {
 			fmt.Printf("[DMG] ✓ APFS found via signature scan at offset: %d (0x%x) - %s\n",
 				od.offset, od.offset, od.description)
-			return od.offset, nil
+			return od.offset, "common_offsets", nil
 		}
 	}
 
@@ -161,12 +190,18 @@ func (d *DMGDevice) detectAPFSOffset() (int64, error) {
 
 		if magic == types.NxMagic {
 			fmt.Printf("[DMG] ✓ APFS found via full scan at offset: %d (0x%x)\n", i, i)
-			return i, nil
+			return i, "full_scan", nil
 		}
 	}
 
 	fmt.Printf("[DMG] ✗ APFS container not found\n")
-	return 0, fmt.Errorf("APFS container not found in DMG file")
+	return 0, "", fmt.Errorf("APFS container not found in DMG file")
+}
+
+// detectAPFSOffset tries to find the APFS container within the DMG (legacy wrapper)
+func (d *DMGDevice) detectAPFSOffset() (int64, error) {
+	offset, _, err := d.detectAPFSOffsetWithMethod()
+	return offset, err
 }
 
 // parseGPTPartitionTable parses the GPT header to find APFS partition
@@ -234,7 +269,47 @@ func (d *DMGDevice) parseGPTPartitionTable(buf []byte) (int64, error) {
 func (d *DMGDevice) ReadAt(p []byte, off int64) (n int, err error) {
 	// Adjust offset to account for APFS container position
 	adjustedOff := d.offset + off
-	return d.file.ReadAt(p, adjustedOff)
+
+	// Check cache for this block
+	blockNum := off / 4096
+	if blockNum >= 0 && blockNum < int64(len(p)/4096) {
+		d.cacheMutex.RLock()
+		if cached, exists := d.blockCache[uint64(blockNum)]; exists && len(cached) == len(p) {
+			copy(p, cached)
+			d.stats.mu.Lock()
+			d.stats.cacheHits++
+			d.stats.mu.Unlock()
+			d.cacheMutex.RUnlock()
+			return len(p), nil
+		}
+		d.cacheMutex.RUnlock()
+	}
+
+	// Cache miss - read from file
+	n, err = d.file.ReadAt(p, adjustedOff)
+	if err == nil && n > 0 {
+		// Update statistics
+		d.stats.mu.Lock()
+		d.stats.blocksRead++
+		d.stats.bytesRead += int64(n)
+		d.stats.cacheMisses++
+		d.stats.mu.Unlock()
+
+		// Try to cache the block if it's reasonable size
+		if n == 4096 && blockNum >= 0 {
+			d.cacheMutex.Lock()
+			// Check if we have space
+			if d.currentCacheSize+int64(n) <= d.maxCacheSize {
+				blockData := make([]byte, n)
+				copy(blockData, p)
+				d.blockCache[uint64(blockNum)] = blockData
+				d.currentCacheSize += int64(n)
+			}
+			d.cacheMutex.Unlock()
+		}
+	}
+
+	return n, err
 }
 
 // Size returns the size of the APFS container
@@ -253,6 +328,60 @@ func (d *DMGDevice) Close() error {
 // BlockSize returns the block size (typically 4096 for APFS)
 func (d *DMGDevice) BlockSize() int64 {
 	return 4096
+}
+
+// GetStats returns current DMG access statistics
+func (d *DMGDevice) GetStats() *DMGStatistics {
+	d.stats.mu.RLock()
+	defer d.stats.mu.RUnlock()
+	return d.stats
+}
+
+// GetOffsetInfo returns information about the detected offset
+func (d *DMGDevice) GetOffsetInfo() (int64, string, time.Duration) {
+	d.stats.mu.RLock()
+	defer d.stats.mu.RUnlock()
+	return d.offset, d.stats.offsetMethod, d.stats.offsetDetectionTime
+}
+
+// ClearCache clears the block cache
+func (d *DMGDevice) ClearCache() {
+	d.cacheMutex.Lock()
+	defer d.cacheMutex.Unlock()
+	d.blockCache = make(map[uint64][]byte)
+	d.currentCacheSize = 0
+}
+
+// CacheHitRate returns the cache hit rate as a percentage
+func (d *DMGDevice) CacheHitRate() float64 {
+	d.stats.mu.RLock()
+	defer d.stats.mu.RUnlock()
+	total := d.stats.cacheHits + d.stats.cacheMisses
+	if total == 0 {
+		return 0.0
+	}
+	return float64(d.stats.cacheHits) / float64(total) * 100.0
+}
+
+// PrintStats prints detailed statistics about DMG access
+func (d *DMGDevice) PrintStats() {
+	d.stats.mu.RLock()
+	defer d.stats.mu.RUnlock()
+
+	fmt.Println("=== DMG Device Statistics ===")
+	fmt.Printf("Offset: %d bytes (0x%x)\n", d.offset, d.offset)
+	fmt.Printf("Detection method: %s\n", d.stats.offsetMethod)
+	fmt.Printf("Detection time: %v\n", d.stats.offsetDetectionTime)
+	fmt.Printf("Blocks read: %d\n", d.stats.blocksRead)
+	fmt.Printf("Bytes read: %d (%d MB)\n", d.stats.bytesRead, d.stats.bytesRead/(1024*1024))
+	fmt.Printf("Cache hits: %d\n", d.stats.cacheHits)
+	fmt.Printf("Cache misses: %d\n", d.stats.cacheMisses)
+	total := d.stats.cacheHits + d.stats.cacheMisses
+	if total > 0 {
+		hitRate := float64(d.stats.cacheHits) / float64(total) * 100.0
+		fmt.Printf("Hit rate: %.2f%%\n", hitRate)
+	}
+	fmt.Printf("Cache size: %d / %d bytes\n", d.currentCacheSize, d.maxCacheSize)
 }
 
 // GetTestDMGPath returns a path to test DMG files based on configuration
@@ -291,4 +420,51 @@ func CreateDMGFromAPFS(apfsPath, dmgPath string) error {
 	}
 
 	return nil
+}
+
+// ValidateAPFSMagic verifies the APFS magic signature at the detected offset
+func (d *DMGDevice) ValidateAPFSMagic() (bool, error) {
+	// Read the superblock area
+	buf := make([]byte, 256)
+	n, err := d.file.ReadAt(buf, d.offset)
+	if err != nil && err != io.EOF {
+		return false, fmt.Errorf("failed to read for validation: %w", err)
+	}
+	if n < int(types.APFSMagicOffset)+4 {
+		return false, fmt.Errorf("insufficient data for validation")
+	}
+
+	// Check for NXSB magic
+	magicBytes := buf[types.APFSMagicOffset : types.APFSMagicOffset+4]
+	magic := uint32(magicBytes[0]) |
+		uint32(magicBytes[1])<<8 |
+		uint32(magicBytes[2])<<16 |
+		uint32(magicBytes[3])<<24
+
+	if magic != types.NxMagic {
+		return false, fmt.Errorf("invalid APFS magic: expected 0x%x, got 0x%x", types.NxMagic, magic)
+	}
+
+	return true, nil
+}
+
+// VerifyGPTStructure validates the GPT partition structure if present
+func (d *DMGDevice) VerifyGPTStructure() (bool, error) {
+	buf := make([]byte, 512+128*4) // GPT header + some entries
+	n, err := d.file.ReadAt(buf, 0)
+	if err != nil && err != io.EOF {
+		return false, fmt.Errorf("failed to read GPT: %w", err)
+	}
+
+	// Check GPT signature
+	if n < types.GPTHeaderOffset+8 {
+		return false, nil // No GPT present
+	}
+
+	gptSignature := string(buf[types.GPTHeaderOffset : types.GPTHeaderOffset+8])
+	if gptSignature != "EFI PART" {
+		return false, nil // No GPT present
+	}
+
+	return true, nil
 }

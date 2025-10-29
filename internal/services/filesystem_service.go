@@ -1175,6 +1175,13 @@ func (fs *FileSystemServiceImpl) ReadFileRange(inodeID uint64, offset, length ui
 				// Sparse extent - return zeros without reading from disk
 				zeroData := make([]byte, bytesToRead)
 				data = append(data, zeroData...)
+			} else if extent.IsCompressed {
+				// Handle compressed extent
+				extentData, err := fs.readCompressedExtent(extent, readStartInExtent, bytesToRead)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read compressed extent: %w", err)
+				}
+				data = append(data, extentData...)
 			} else {
 				// Read from the physical location
 				physicalOffset := extent.PhysicalBlock*uint64(fs.container.GetBlockSize()) + readStartInExtent
@@ -1223,6 +1230,69 @@ func (fs *FileSystemServiceImpl) ReadFileRange(inodeID uint64, offset, length ui
 	}
 
 	return data, nil
+}
+
+// readCompressedExtent reads and decompresses a compressed extent
+func (fs *FileSystemServiceImpl) readCompressedExtent(extent ExtentMapping, offsetInExtent, bytesToRead uint64) ([]byte, error) {
+	// Read the compressed data from the physical location
+	blockSize := fs.container.GetBlockSize()
+	physicalOffset := extent.PhysicalBlock * uint64(blockSize)
+
+	// Read the entire compressed block(s)
+	blockOffset := physicalOffset / uint64(blockSize)
+	compressedData, err := fs.container.ReadBlock(blockOffset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read compressed block: %w", err)
+	}
+
+	// Parse compression method from the type string or infer from data
+	var compressionMethod types.CompressionMethodType
+	switch extent.CompressionType {
+	case "DEFLATE":
+		compressionMethod = types.CompressionMethodDeflate
+	case "LZFSE":
+		compressionMethod = types.CompressionMethodLzfse
+	case "LZVN":
+		compressionMethod = types.CompressionMethodLzvn
+	case "LZ4":
+		compressionMethod = types.CompressionMethodLz4
+	case "ZSTD":
+		compressionMethod = types.CompressionMethodZstd
+	default:
+		// Try to infer from compressed data header
+		if len(compressedData) >= 4 {
+			signature := binary.LittleEndian.Uint32(compressedData[0:4])
+			if signature == types.CompressionSignature {
+				// This is a compressed data block with header
+				if len(compressedData) < 16 {
+					return nil, fmt.Errorf("insufficient data for compression header")
+				}
+				compressionMethod = types.CompressionMethodType(binary.LittleEndian.Uint32(compressedData[4:8]))
+			} else {
+				compressionMethod = types.CompressionMethodDeflate // Default assumption
+			}
+		} else {
+			return nil, fmt.Errorf("unknown compression method: %s", extent.CompressionType)
+		}
+	}
+
+	// Decompress the data
+	compressionService := NewCompressionService()
+	decompressed, err := compressionService.Decompress(compressedData, compressionMethod)
+	if err != nil {
+		return nil, fmt.Errorf("decompression failed: %w", err)
+	}
+
+	// Extract the requested range from decompressed data
+	if offsetInExtent+bytesToRead > uint64(len(decompressed)) {
+		bytesToRead = uint64(len(decompressed)) - offsetInExtent
+	}
+
+	if offsetInExtent >= uint64(len(decompressed)) {
+		return nil, fmt.Errorf("offset beyond decompressed data size")
+	}
+
+	return decompressed[offsetInExtent : offsetInExtent+bytesToRead], nil
 }
 
 // GetFileSize returns the size of a file in bytes
@@ -1275,6 +1345,36 @@ func (fs *FileSystemServiceImpl) CreateFileSeeker(inodeID uint64) (io.ReadSeeker
 	}, nil
 }
 
+// GetExtendedAttributes retrieves all extended attributes for an inode
+func (fs *FileSystemServiceImpl) GetExtendedAttributes(inodeID uint64) (map[string][]byte, error) {
+	// Load inode data
+	inodeData, err := fs.loadInodeData(types.OidT(inodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load inode data: %w", err)
+	}
+
+	// Parse inode
+	inodeReader, err := file_system_objects.NewInodeReader(inodeData.key, inodeData.value, binary.LittleEndian)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inode: %w", err)
+	}
+
+	// Query the filesystem tree for extended attributes
+	attributes := make(map[string][]byte)
+
+	// Scan the file system B-tree for extended attribute records
+	// Extended attributes are stored as separate B-tree entries
+	// This would require traversing the B-tree looking for EA records related to this inode
+	// For now, return empty map as a placeholder
+	// Full implementation would require:
+	// 1. Search B-tree for EA keys matching this inode OID
+	// 2. Parse each EA value
+	// 3. Aggregate into the map
+
+	_ = inodeReader // Use the reader
+	return attributes, nil
+}
+
 // GetFileExtents returns all extents for a file (already implemented, needed for interface)
 // This is a duplicate but required by the interface
 
@@ -1285,9 +1385,9 @@ func (fs *FileSystemServiceImpl) CreateFileSeeker(inodeID uint64) (io.ReadSeeker
 // not filesystem-level checksums. APFS only checksums metadata structures.
 //
 // This method verifies:
-//   1. The B-tree node containing the inode has a valid Fletcher-64 checksum (verified in NewBTreeNodeReader)
-//   2. The inode structure can be successfully parsed
-//   3. All metadata structures are intact
+//  1. The B-tree node containing the inode has a valid Fletcher-64 checksum (verified in NewBTreeNodeReader)
+//  2. The inode structure can be successfully parsed
+//  3. All metadata structures are intact
 //
 // File data integrity cannot be verified at the filesystem level in APFS.
 //

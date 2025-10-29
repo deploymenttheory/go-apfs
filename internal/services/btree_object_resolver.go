@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/deploymenttheory/go-apfs/internal/interfaces"
 	"github.com/deploymenttheory/go-apfs/internal/parsers/btrees"
@@ -12,13 +13,16 @@ import (
 
 // BTreeObjectResolver resolves virtual object IDs using B-tree traversal
 type BTreeObjectResolver struct {
-	container *ContainerReader
+	container  *ContainerReader
+	oIDCache   map[string]types.Paddr // Cache key: oid+xid, value: physical address
+	cacheMutex sync.RWMutex           // Thread-safe cache access
 }
 
 // NewBTreeObjectResolver creates a new B-tree based object resolver
 func NewBTreeObjectResolver(container *ContainerReader) *BTreeObjectResolver {
 	return &BTreeObjectResolver{
 		container: container,
+		oIDCache:  make(map[string]types.Paddr),
 	}
 }
 
@@ -27,6 +31,17 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 	if btor.container == nil {
 		return 0, fmt.Errorf("container reader is nil")
 	}
+
+	// Generate cache key
+	cacheKey := btor.makeCacheKey(virtualOID, transactionID)
+
+	// Check cache first
+	btor.cacheMutex.RLock()
+	if cached, exists := btor.oIDCache[cacheKey]; exists {
+		btor.cacheMutex.RUnlock()
+		return cached, nil
+	}
+	btor.cacheMutex.RUnlock()
 
 	containerSB := btor.container.GetSuperblock()
 	if containerSB == nil {
@@ -55,7 +70,14 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 	// Check if this is a manually managed object map (no B-tree)
 	if omap.OmTreeOid == 0 {
 		// Try manually managed object map parsing
-		return btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
+		result, err := btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
+		if err == nil {
+			// Cache the result
+			btor.cacheMutex.Lock()
+			btor.oIDCache[cacheKey] = result
+			btor.cacheMutex.Unlock()
+		}
+		return result, err
 	}
 
 	// This object map uses a B-tree - use the proper B-tree OID and transaction context
@@ -72,12 +94,23 @@ func (btor *BTreeObjectResolver) ResolveVirtualObject(virtualOID types.OidT, tra
 	manualResult, err := btor.searchManuallyManagedObjectMap(omapData, virtualOID, transactionID)
 	if err == nil {
 		// fmt.Printf("DEBUG: Found mapping in manually managed section: %d\n", manualResult)
+		// Cache the result
+		btor.cacheMutex.Lock()
+		btor.oIDCache[cacheKey] = manualResult
+		btor.cacheMutex.Unlock()
 		return manualResult, nil
 	}
 
 	// If manual search failed, try B-tree approach with proper transaction ID
 	// fmt.Printf("DEBUG: Manual search failed (%v), trying B-tree approach\n", err)
-	return btor.searchBTreeObjectMap(omap.OmTreeOid, virtualOID, searchXID)
+	result, err := btor.searchBTreeObjectMap(omap.OmTreeOid, virtualOID, searchXID)
+	if err == nil {
+		// Cache the result
+		btor.cacheMutex.Lock()
+		btor.oIDCache[cacheKey] = result
+		btor.cacheMutex.Unlock()
+	}
+	return result, err
 }
 
 // searchManuallyManagedObjectMap searches for object mappings in a manually managed object map
@@ -502,4 +535,17 @@ func (btor *BTreeObjectResolver) compareKeys(key1, key2 types.OmapKeyT) int {
 	}
 
 	return 0 // Keys are equal
+}
+
+// makeCacheKey generates a cache key for a given virtual OID and transaction ID
+func (btor *BTreeObjectResolver) makeCacheKey(virtualOID types.OidT, transactionID types.XidT) string {
+	return fmt.Sprintf("%d-%d", virtualOID, transactionID)
+}
+
+// ClearCache clears the cache
+func (btor *BTreeObjectResolver) ClearCache() {
+	btor.cacheMutex.Lock()
+	btor.oIDCache = make(map[string]types.Paddr)
+	btor.cacheMutex.Unlock()
+	fmt.Println("Cache cleared.")
 }
