@@ -1,4 +1,4 @@
-package device
+package disk
 
 import (
 	"bytes"

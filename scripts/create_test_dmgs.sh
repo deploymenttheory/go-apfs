@@ -14,7 +14,7 @@ cleanup_and_exit() {
 	echo "Cleaning up temporary files..."
 	
 	# Unmount any remaining volumes
-	for vol in /Volumes/TestAPFS* /Volumes/EmptyAPFS /Volumes/BasicAPFS /Volumes/PopulatedAPFS /Volumes/FullAPFS; do
+	for vol in /Volumes/TestAPFS* /Volumes/EmptyAPFS /Volumes/BasicAPFS /Volumes/PopulatedAPFS /Volumes/FullAPFS /Volumes/BTree100MB; do
 		if [ -d "$vol" ]; then
 			hdiutil detach "$vol" 2>/dev/null || true
 			sleep 1
@@ -148,12 +148,56 @@ populate_populated() {
 populate_full() {
 	local mount_point=$1
 	mkdir -p "$mount_point/bigfiles"
-	
+
 	# Create files to fill most of the space
 	dd if=/dev/random of="$mount_point/bigfiles/large_1.bin" bs=1024 count=800 2>/dev/null
 	dd if=/dev/random of="$mount_point/bigfiles/large_2.bin" bs=1024 count=800 2>/dev/null
-	
+
 	echo "File in full volume" > "$mount_point/test.txt"
+}
+
+populate_btree_100mb() {
+	local mount_point=$1
+
+	echo "   Creating extensive directory structure to populate B-tree..."
+
+	# Create deep directory structures to populate B-tree nodes
+	for dir_num in {1..20}; do
+		mkdir -p "$mount_point/dir_$dir_num/subdir_a/subdir_b/subdir_c"
+		mkdir -p "$mount_point/dir_$dir_num/subdir_x/subdir_y/subdir_z"
+	done
+
+	# Create many small files across directories to populate file extent records
+	for dir_num in {1..20}; do
+		for file_num in {1..50}; do
+			echo "Content for dir $dir_num file $file_num - $(date)" > "$mount_point/dir_$dir_num/file_${file_num}.txt"
+		done
+	done
+
+	# Create files of varying sizes to populate extent B-trees
+	mkdir -p "$mount_point/data"
+	for i in {1..30}; do
+		size=$((i * 100))
+		dd if=/dev/random of="$mount_point/data/file_${i}.bin" bs=1024 count=$size 2>/dev/null
+	done
+
+	# Create many nested directories
+	mkdir -p "$mount_point/nested"
+	for i in {1..10}; do
+		mkdir -p "$mount_point/nested/level_$i"
+		for j in {1..10}; do
+			echo "Nested content level $i item $j" > "$mount_point/nested/level_$i/item_$j.txt"
+		done
+	done
+
+	# Create symlinks to add to the B-tree complexity
+	mkdir -p "$mount_point/links"
+	for i in {1..5}; do
+		ln -s "$mount_point/dir_1/file_1.txt" "$mount_point/links/link_$i.txt" 2>/dev/null || true
+	done
+
+	echo "   Created $(find "$mount_point" -type f | wc -l) files"
+	echo "   Created $(find "$mount_point" -type d | wc -l) directories"
 }
 
 # Create test volumes
@@ -165,6 +209,8 @@ create_apfs_volume "8m" "BasicAPFS" "$TESTS_DIR/basic_apfs.dmg" "populate_basic"
 create_apfs_volume "10m" "PopulatedAPFS" "$TESTS_DIR/populated_apfs.dmg" "populate_populated"
 
 create_apfs_volume "6m" "FullAPFS" "$TESTS_DIR/full_apfs.dmg" "populate_full"
+
+create_apfs_volume "100m" "BTree100MB" "$TESTS_DIR/btree_100mb.dmg" "populate_btree_100mb"
 
 # Summary
 echo ""

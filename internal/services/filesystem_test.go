@@ -3,15 +3,15 @@ package services
 import (
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 func TestFilesystemExtraction(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -20,16 +20,16 @@ func TestFilesystemExtraction(t *testing.T) {
 
 	// Try multiple DMG options in order of preference
 	testPaths := []string{
-		device.GetTestDMGPath("populated_apfs.dmg", config),
-		device.GetTestDMGPath("basic_apfs.dmg", config),
-		device.GetTestDMGPath("full_apfs.dmg", config),
+		disk.GetTestDMGPath("populated_apfs.dmg", config),
+		disk.GetTestDMGPath("basic_apfs.dmg", config),
+		disk.GetTestDMGPath("full_apfs.dmg", config),
 	}
 
-	var dmg *device.DMGDevice
+	var dmg *disk.DMGDevice
 	var selectedPath string
 
 	for _, path := range testPaths {
-		d, err := device.OpenDMG(path, config)
+		d, err := disk.OpenDMG(path, config)
 		if err == nil {
 			dmg = d
 			selectedPath = path

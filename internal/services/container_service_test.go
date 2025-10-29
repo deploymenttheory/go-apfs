@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestContainerReaderInitialization(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -23,7 +23,7 @@ func TestContainerReaderInitialization(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -43,7 +43,7 @@ func TestContainerReaderInitialization(t *testing.T) {
 }
 
 func TestContainerReaderSuperblockFields(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -54,7 +54,7 @@ func TestContainerReaderSuperblockFields(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -99,7 +99,7 @@ func TestContainerReaderSuperblockFields(t *testing.T) {
 }
 
 func TestContainerReaderBlockIO(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -110,7 +110,7 @@ func TestContainerReaderBlockIO(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -150,7 +150,7 @@ func TestContainerReaderBlockIO(t *testing.T) {
 }
 
 func TestContainerReaderWithMultipleDMGs(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -165,7 +165,7 @@ func TestContainerReaderWithMultipleDMGs(t *testing.T) {
 				t.Skipf("Test DMG not found: %v", testDMG)
 			}
 
-			dmg, err := device.OpenDMG(testDMG, config)
+			dmg, err := disk.OpenDMG(testDMG, config)
 			if err != nil {
 				t.Skipf("Failed to open DMG: %v", err)
 			}
@@ -189,7 +189,7 @@ func TestContainerReaderWithMultipleDMGs(t *testing.T) {
 }
 
 func TestContainerReaderCaching(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -200,7 +200,7 @@ func TestContainerReaderCaching(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 

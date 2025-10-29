@@ -4,16 +4,16 @@ import (
 	"os"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 func TestBTreeServiceWithDMG(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
 		t.Logf("Failed to load config (using defaults): %v", err)
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -34,7 +34,7 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 
 	var testDMGPath string
 	for _, filename := range testFiles {
-		path := device.GetTestDMGPath(filename, config)
+		path := disk.GetTestDMGPath(filename, config)
 		if _, err := os.Stat(path); err == nil {
 			testDMGPath = path
 			break
@@ -46,7 +46,7 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 	}
 
 	// Open the DMG
-	dmg, err := device.OpenDMG(testDMGPath, config)
+	dmg, err := disk.OpenDMG(testDMGPath, config)
 	if err != nil {
 		t.Fatalf("Failed to open DMG: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 	if err != nil {
 		t.Logf("Standard NewVolumeService failed: %v", err)
 		t.Logf("Trying enhanced volume discovery...")
-		
+
 		// Scan for the actual volume superblock like we do in the filesystem test
 		var volumeBlock uint64
 		found := false
@@ -97,7 +97,7 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			
+
 			if len(blockData) >= 36 {
 				magic := uint32(blockData[32]) | uint32(blockData[33])<<8 | uint32(blockData[34])<<16 | uint32(blockData[35])<<24
 				if magic == 0x42535041 { // "APSB"
@@ -108,7 +108,7 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 				}
 			}
 		}
-		
+
 		if found {
 			vs, err = NewVolumeServiceFromPhysicalOID(cr, types.OidT(volumeBlock))
 			if err != nil {
@@ -158,9 +158,9 @@ func TestBTreeServiceWithDMG(t *testing.T) {
 
 func TestBTreeServiceDirectParsing(t *testing.T) {
 	// Test with a known good APFS container
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  0, // Try direct APFS first
 			TestDataPath:   "../../tests",
@@ -168,14 +168,14 @@ func TestBTreeServiceDirectParsing(t *testing.T) {
 	}
 
 	// Test with APFS DMG with real files
-	testPath := device.GetTestDMGPath("test_apfs_with_files.dmg", config)
+	testPath := disk.GetTestDMGPath("test_apfs_with_files.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("test_apfs_with_files.dmg not found")
 	}
 
 	// Open as DMG with auto-detection (Cursor DMG likely has GPT structure)
 	config.AutoDetectAPFS = true
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	if err != nil {
 		t.Fatalf("Failed to open test file: %v", err)
 	}

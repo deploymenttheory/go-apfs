@@ -4,15 +4,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 func TestDetailedObjectMapAnalysis(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -20,7 +20,7 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 	}
 
 	// Use our populated DMG
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
@@ -28,7 +28,7 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 	t.Logf("Testing detailed object map analysis with: %s", testPath)
 
 	// Open the DMG
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	if err != nil {
 		t.Fatalf("Failed to open DMG: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 		}
 
 		t.Logf("*** Analyzing %s (OID=%d) ***", entry.name, entry.oid)
-		
+
 		// Try to read the object at its physical block (assuming OID = physical address)
 		blockData, err := cr.ReadBlock(uint64(entry.oid))
 		if err != nil {
@@ -106,32 +106,32 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 			// Extract the base type (remove flags)
 			baseType := objType & types.ObjectTypeMask
 			flags := objType & types.ObjectTypeFlagsMask
-			
+
 			t.Logf("    Base Type: 0x%08X, Flags: 0x%08X", baseType, flags)
-			
+
 			if flags&types.ObjPhysical != 0 {
 				t.Logf("    ✓ Object is marked as PHYSICAL")
 			}
 			if flags&types.ObjVirtual == 0 && flags&types.ObjEphemeral == 0 && flags&types.ObjPhysical != 0 {
 				t.Logf("    ✓ Physical object storage type confirmed")
 			}
-			
+
 			// Try to parse as object map
 			if baseType == types.ObjectTypeOmap {
 				t.Logf("  ✓ Confirmed: This is an object map structure")
-				
+
 				// Parse additional object map fields
 				if len(blockData) >= 72 {
 					flags := uint32(blockData[36]) | uint32(blockData[37])<<8 | uint32(blockData[38])<<16 | uint32(blockData[39])<<24
 					snapCount := uint32(blockData[40]) | uint32(blockData[41])<<8 | uint32(blockData[42])<<16 | uint32(blockData[43])<<24
 					treeOID := uint64(blockData[56]) | uint64(blockData[57])<<8 | uint64(blockData[58])<<16 | uint64(blockData[59])<<24 |
 						uint64(blockData[60])<<32 | uint64(blockData[61])<<40 | uint64(blockData[62])<<48 | uint64(blockData[63])<<56
-					
+
 					t.Logf("    Object Map Details:")
 					t.Logf("      Flags: 0x%08X", flags)
 					t.Logf("      Snapshot Count: %d", snapCount)
 					t.Logf("      B-tree OID: %d", treeOID)
-					
+
 					// Try to read the B-tree
 					if treeOID != 0 {
 						t.Logf("  *** Examining Object Map B-tree at OID %d ***", treeOID)
@@ -142,20 +142,20 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 							if len(treeData) >= 32 {
 								treeType := uint32(treeData[24]) | uint32(treeData[25])<<8 | uint32(treeData[26])<<16 | uint32(treeData[27])<<24
 								t.Logf("    B-tree Type: 0x%08X", treeType)
-								
+
 								if treeType == types.ObjectTypeBtreeNode {
 									t.Logf("    ✓ This is a B-tree node - analyzing...")
-									
+
 									// Parse B-tree node header to see entry count
 									if len(treeData) >= 56 {
 										flags := uint16(treeData[32]) | uint16(treeData[33])<<8
 										level := uint16(treeData[34]) | uint16(treeData[35])<<8
 										nkeys := uint32(treeData[36]) | uint32(treeData[37])<<8 | uint32(treeData[38])<<16 | uint32(treeData[39])<<24
-										
+
 										t.Logf("      Node Flags: 0x%04X", flags)
 										t.Logf("      Node Level: %d", level)
 										t.Logf("      Key Count: %d", nkeys)
-										
+
 										if nkeys == 0 {
 											t.Logf("      ⚠ B-tree node is empty - this explains missing object mappings!")
 										} else {
@@ -174,24 +174,24 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 	// Let's also try scanning for ANY blocks that might contain object map entries
 	t.Logf("*** Scanning for any B-tree nodes that might contain object mappings ***")
 	totalBlocks := min(uint64(containerSB.NxBlockCount), 1000) // Limit scan to first 1000 blocks
-	
+
 	objectMapNodes := 0
 	for blockNum := uint64(0); blockNum < totalBlocks; blockNum++ {
 		blockData, err := cr.ReadBlock(blockNum)
 		if err != nil {
 			continue
 		}
-		
+
 		if len(blockData) < 56 {
 			continue
 		}
-		
+
 		// Check if this looks like a B-tree node
 		objType := uint32(blockData[24]) | uint32(blockData[25])<<8 | uint32(blockData[26])<<16 | uint32(blockData[27])<<24
 		if objType == types.ObjectTypeBtreeNode {
 			// Check if it's specifically an object map B-tree (subtype should be OBJECT_TYPE_OMAP)
 			subtype := uint32(blockData[28]) | uint32(blockData[29])<<8 | uint32(blockData[30])<<16 | uint32(blockData[31])<<24
-			
+
 			if subtype == types.ObjectTypeOmap {
 				objectMapNodes++
 				nkeys := uint32(blockData[36]) | uint32(blockData[37])<<8 | uint32(blockData[38])<<16 | uint32(blockData[39])<<24
@@ -199,7 +199,7 @@ func TestDetailedObjectMapAnalysis(t *testing.T) {
 			}
 		}
 	}
-	
+
 	if objectMapNodes == 0 {
 		t.Logf("  ⚠ No object map B-tree nodes found in first %d blocks", totalBlocks)
 		t.Logf("  This confirms the object mappings are missing/empty")

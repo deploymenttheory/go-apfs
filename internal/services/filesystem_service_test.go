@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 // TestFileSystemServiceGetInodeByPath tests path-based inode lookup
 func TestFileSystemServiceGetInodeByPath(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -26,7 +26,7 @@ func TestFileSystemServiceGetInodeByPath(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -74,7 +74,7 @@ func TestFileSystemServiceGetInodeByPath(t *testing.T) {
 
 // TestFileSystemServiceListDirectoryContents tests directory listing by inode
 func TestFileSystemServiceListDirectoryContents(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -85,7 +85,7 @@ func TestFileSystemServiceListDirectoryContents(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -141,7 +141,7 @@ func TestFileSystemServiceListDirectoryContents(t *testing.T) {
 
 // TestFileSystemServiceGetFileExtents tests extent mapping
 func TestFileSystemServiceGetFileExtents(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -152,7 +152,7 @@ func TestFileSystemServiceGetFileExtents(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -206,7 +206,7 @@ func TestFileSystemServiceGetFileExtents(t *testing.T) {
 
 // TestFileSystemServiceFindFilesByName tests pattern matching
 func TestFileSystemServiceFindFilesByName(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -217,7 +217,7 @@ func TestFileSystemServiceFindFilesByName(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -259,7 +259,7 @@ func TestFileSystemServiceFindFilesByName(t *testing.T) {
 
 // TestFileSystemServiceGetFileMetadata tests metadata retrieval by inode
 func TestFileSystemServiceGetFileMetadata(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -270,7 +270,7 @@ func TestFileSystemServiceGetFileMetadata(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -320,7 +320,7 @@ func TestFileSystemServiceGetFileMetadata(t *testing.T) {
 
 // TestFileSystemServiceGetParentDirectory tests parent directory lookup
 func TestFileSystemServiceGetParentDirectory(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -331,7 +331,7 @@ func TestFileSystemServiceGetParentDirectory(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -382,21 +382,21 @@ func TestFileSystemServiceGetParentDirectory(t *testing.T) {
 // TestFileSystemServiceIsPathAccessible tests path accessibility checking
 func TestFileSystemServiceIsPathAccessible(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -434,21 +434,21 @@ func TestFileSystemServiceIsPathAccessible(t *testing.T) {
 
 // TestReadFile tests reading entire file content
 func TestReadFile(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -483,21 +483,21 @@ func TestReadFile(t *testing.T) {
 
 // TestReadFileRange tests reading specific byte ranges from files
 func TestReadFileRange(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -533,21 +533,21 @@ func TestReadFileRange(t *testing.T) {
 
 // TestGetFileSize tests retrieving file sizes
 func TestGetFileSize(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -582,21 +582,21 @@ func TestGetFileSize(t *testing.T) {
 
 // TestCreateFileReader tests io.Reader adapter creation and usage
 func TestCreateFileReader(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -637,21 +637,21 @@ func TestCreateFileReader(t *testing.T) {
 
 // TestCreateFileSeeker tests io.ReadSeeker adapter creation and seeking
 func TestCreateFileSeeker(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -703,21 +703,21 @@ func TestCreateFileSeeker(t *testing.T) {
 
 // TestVerifyFileChecksum tests file integrity verification
 func TestVerifyFileChecksum(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 
@@ -752,9 +752,9 @@ func TestVerifyFileChecksum(t *testing.T) {
 
 // TestFileReadingWithMultipleDMGs tests file reading across different DMG types
 func TestFileReadingWithMultipleDMGs(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -769,12 +769,12 @@ func TestFileReadingWithMultipleDMGs(t *testing.T) {
 
 	for _, dmgName := range dmgs {
 		t.Run(dmgName, func(t *testing.T) {
-			testPath := device.GetTestDMGPath(dmgName, config)
+			testPath := disk.GetTestDMGPath(dmgName, config)
 			if _, err := os.Stat(testPath); os.IsNotExist(err) {
 				t.Skipf("%s not found", dmgName)
 			}
 
-			dmg, err := device.OpenDMG(testPath, config)
+			dmg, err := disk.OpenDMG(testPath, config)
 			require.NoError(t, err)
 			defer dmg.Close()
 

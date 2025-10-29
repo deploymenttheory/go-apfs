@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBTreeObjectResolverInitialization(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -23,7 +23,7 @@ func TestBTreeObjectResolverInitialization(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -36,7 +36,7 @@ func TestBTreeObjectResolverInitialization(t *testing.T) {
 }
 
 func TestBTreeObjectResolverContainerObjectMap(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -47,7 +47,7 @@ func TestBTreeObjectResolverContainerObjectMap(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -76,7 +76,7 @@ func TestBTreeObjectResolverContainerObjectMap(t *testing.T) {
 }
 
 func TestBTreeObjectResolverWithErrorHandling(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -87,7 +87,7 @@ func TestBTreeObjectResolverWithErrorHandling(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -112,7 +112,7 @@ func TestBTreeObjectResolverWithErrorHandling(t *testing.T) {
 }
 
 func TestBTreeObjectResolverVolumeResolution(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -123,7 +123,7 @@ func TestBTreeObjectResolverVolumeResolution(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 
@@ -160,7 +160,7 @@ func TestBTreeObjectResolverVolumeResolution(t *testing.T) {
 }
 
 func TestBTreeObjectResolverMultipleOIDs(t *testing.T) {
-	config := &device.DMGConfig{
+	config := &disk.DMGConfig{
 		AutoDetectAPFS: true,
 		DefaultOffset:  20480,
 		TestDataPath:   "../../tests",
@@ -171,7 +171,7 @@ func TestBTreeObjectResolverMultipleOIDs(t *testing.T) {
 		t.Skipf("Test DMG not found: %v", testDMG)
 	}
 
-	dmg, err := device.OpenDMG(testDMG, config)
+	dmg, err := disk.OpenDMG(testDMG, config)
 	require.NoError(t, err, "failed to open test DMG")
 	defer dmg.Close()
 

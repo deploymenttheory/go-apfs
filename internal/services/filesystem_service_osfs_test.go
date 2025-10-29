@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
@@ -233,21 +233,21 @@ func TestOSFilesystemFileMetadataReal(t *testing.T) {
 // TestDMGFilesystemReadFileSkips tests that DMG file reading properly skips
 // when object map is not available (expected behavior)
 func TestDMGFilesystemReadFileSkips(t *testing.T) {
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
 		}
 	}
 
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
 
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	require.NoError(t, err)
 	defer dmg.Close()
 

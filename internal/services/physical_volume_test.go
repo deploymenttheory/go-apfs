@@ -5,15 +5,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 func TestPhysicalVolumeAccess(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -21,7 +21,7 @@ func TestPhysicalVolumeAccess(t *testing.T) {
 	}
 
 	// Use our populated DMG
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
@@ -29,7 +29,7 @@ func TestPhysicalVolumeAccess(t *testing.T) {
 	t.Logf("Testing physical volume access with: %s", testPath)
 
 	// Open the DMG
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	if err != nil {
 		t.Fatalf("Failed to open DMG: %v", err)
 	}
@@ -94,34 +94,34 @@ func TestPhysicalVolumeAccess(t *testing.T) {
 
 	if baseType == types.ObjectTypeFs {
 		t.Logf("*** SUCCESS: Found APFS volume superblock as PHYSICAL object! ***")
-		
+
 		// Parse volume superblock magic
 		if len(volumeData) >= 40 {
 			// Volume superblock specific magic starts at offset 32
 			volumeMagic := binary.BigEndian.Uint32(volumeData[32:36]) // APFS uses big-endian for magic
 			t.Logf("Volume Magic: 0x%08X (expected: 0x42535041 for 'APSB')", volumeMagic)
-			
+
 			if volumeMagic == 0x42535041 { // 'APSB' in big-endian
 				t.Logf("✓✓✓ CONFIRMED: Valid APFS volume superblock found!")
-				
+
 				// Parse key volume fields
 				if len(volumeData) >= 200 {
 					// Parse important volume fields (based on apple_apfs_subr structure)
 					blockSize := binary.LittleEndian.Uint32(volumeData[36:40])
 					blockCount := binary.LittleEndian.Uint64(volumeData[40:48])
-					
+
 					t.Logf("Volume Details:")
 					t.Logf("  Block Size: %d bytes", blockSize)
 					t.Logf("  Block Count: %d blocks", blockCount)
-					
+
 					// Look for the filesystem root tree OID (this would contain file/directory records)
 					// This is typically around offset 120-140 in the volume superblock
 					for offset := 120; offset <= 200; offset += 8 {
 						if offset+8 <= len(volumeData) {
-							oid := binary.LittleEndian.Uint64(volumeData[offset:offset+8])
+							oid := binary.LittleEndian.Uint64(volumeData[offset : offset+8])
 							if oid != 0 && oid < uint64(containerSB.NxBlockCount) {
 								t.Logf("  Potential FS Root Tree OID at offset %d: %d", offset, oid)
-								
+
 								// Try to read this as a B-tree
 								if rootData, err := cr.ReadBlock(oid); err == nil && len(rootData) >= 32 {
 									rootType := binary.LittleEndian.Uint32(rootData[24:28])
@@ -139,9 +139,9 @@ func TestPhysicalVolumeAccess(t *testing.T) {
 			}
 		}
 	} else {
-		t.Logf("⚠ Object type 0x%08X is not a volume superblock (expected 0x%08X)", 
+		t.Logf("⚠ Object type 0x%08X is not a volume superblock (expected 0x%08X)",
 			baseType, types.ObjectTypeFs)
-		
+
 		// Let's see what other types we might find
 		switch baseType {
 		case types.ObjectTypeBtreeNode:
@@ -162,21 +162,21 @@ func TestPhysicalVolumeAccess(t *testing.T) {
 		if blockAddr < 0 || blockAddr >= int64(containerSB.NxBlockCount) {
 			continue
 		}
-		
+
 		if blockAddr == int64(volumeOID) {
 			continue // Already tested this one
 		}
-		
+
 		t.Logf("Checking block %d (offset %+d)...", blockAddr, offset)
 		blockData, err := cr.ReadBlock(uint64(blockAddr))
 		if err != nil {
 			continue
 		}
-		
+
 		if len(blockData) >= 36 {
 			objType := binary.LittleEndian.Uint32(blockData[24:28])
 			baseType := objType & types.ObjectTypeMask
-			
+
 			if baseType == types.ObjectTypeFs {
 				t.Logf("*** FOUND volume superblock at block %d! ***", blockAddr)
 				break

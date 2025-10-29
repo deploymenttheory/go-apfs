@@ -4,15 +4,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 	"github.com/deploymenttheory/go-apfs/internal/types"
 )
 
 func TestObjectMapResolution(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -20,7 +20,7 @@ func TestObjectMapResolution(t *testing.T) {
 	}
 
 	// Use our populated DMG
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
@@ -28,7 +28,7 @@ func TestObjectMapResolution(t *testing.T) {
 	t.Logf("Testing object map resolution with: %s", testPath)
 
 	// Open the DMG
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	if err != nil {
 		t.Fatalf("Failed to open DMG: %v", err)
 	}
@@ -65,14 +65,14 @@ func TestObjectMapResolution(t *testing.T) {
 			t.Logf("Failed to resolve volume OID %d: %v", volumeOID, err)
 		} else {
 			t.Logf("SUCCESS: Volume OID %d resolved to physical address %d", volumeOID, physAddr)
-			
+
 			// Try to read the volume superblock at this physical address
 			volumeData, err := cr.ReadBlock(uint64(physAddr))
 			if err != nil {
 				t.Logf("Failed to read volume data at address %d: %v", physAddr, err)
 			} else {
 				t.Logf("Volume data read successfully (%d bytes)", len(volumeData))
-				
+
 				// Check if it has valid volume superblock magic
 				if len(volumeData) >= 36 {
 					magic := uint32(volumeData[32]) | uint32(volumeData[33])<<8 | uint32(volumeData[34])<<16 | uint32(volumeData[35])<<24

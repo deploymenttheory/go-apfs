@@ -4,14 +4,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/deploymenttheory/go-apfs/internal/device"
+	"github.com/deploymenttheory/go-apfs/internal/disk"
 )
 
 func TestCheckpointDiscovery(t *testing.T) {
 	// Load configuration
-	config, err := device.LoadDMGConfig()
+	config, err := disk.LoadDMGConfig()
 	if err != nil {
-		config = &device.DMGConfig{
+		config = &disk.DMGConfig{
 			AutoDetectAPFS: true,
 			DefaultOffset:  20480,
 			TestDataPath:   "../../tests",
@@ -19,7 +19,7 @@ func TestCheckpointDiscovery(t *testing.T) {
 	}
 
 	// Use our populated DMG
-	testPath := device.GetTestDMGPath("populated_apfs.dmg", config)
+	testPath := disk.GetTestDMGPath("populated_apfs.dmg", config)
 	if _, err := os.Stat(testPath); os.IsNotExist(err) {
 		t.Skip("populated_apfs.dmg not found")
 	}
@@ -27,7 +27,7 @@ func TestCheckpointDiscovery(t *testing.T) {
 	t.Logf("Testing checkpoint discovery with: %s", testPath)
 
 	// Open the DMG
-	dmg, err := device.OpenDMG(testPath, config)
+	dmg, err := disk.OpenDMG(testPath, config)
 	if err != nil {
 		t.Fatalf("Failed to open DMG: %v", err)
 	}
@@ -80,17 +80,17 @@ func TestCheckpointDiscovery(t *testing.T) {
 		t.Logf("  Magic: 0x%08X", sb.NxMagic)
 		t.Logf("  Object Map OID: %d", sb.NxOmapOid)
 		t.Logf("  Volume OID: %d", sb.NxFsOid[0])
-		
+
 		// Compare with block zero
 		if sb.NxNextXid != blockZeroSB.NxNextXid {
-			t.Logf("*** DIFFERENT XID: Checkpoint=%d vs BlockZero=%d ***", 
+			t.Logf("*** DIFFERENT XID: Checkpoint=%d vs BlockZero=%d ***",
 				sb.NxNextXid, blockZeroSB.NxNextXid)
 		} else {
 			t.Logf("*** Same XID as block zero - no checkpoint differences ***")
 		}
-		
+
 		if sb.NxOmapOid != blockZeroSB.NxOmapOid {
-			t.Logf("*** DIFFERENT OMAP: Checkpoint=%d vs BlockZero=%d ***", 
+			t.Logf("*** DIFFERENT OMAP: Checkpoint=%d vs BlockZero=%d ***",
 				sb.NxOmapOid, blockZeroSB.NxOmapOid)
 		}
 	}
@@ -98,7 +98,7 @@ func TestCheckpointDiscovery(t *testing.T) {
 	// Test if the new superblock gives us better object map resolution
 	if latestCandidate.Superblock != nil && latestCandidate.Superblock.NxOmapOid != blockZeroSB.NxOmapOid {
 		t.Logf("*** Testing object map with checkpoint-discovered superblock ***")
-		
+
 		// Test the new object map
 		resolver := NewBTreeObjectResolver(cr)
 		volumeOID := latestCandidate.Superblock.NxFsOid[0]
