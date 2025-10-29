@@ -1168,40 +1168,47 @@ func (fs *FileSystemServiceImpl) ReadFileRange(inodeID uint64, offset, length ui
 
 			bytesToRead := readEndInExtent - readStartInExtent
 
-			// Read from the physical location
-			physicalOffset := extent.PhysicalBlock*uint64(fs.container.GetBlockSize()) + readStartInExtent
-			blockOffset := physicalOffset / uint64(fs.container.GetBlockSize())
-			blockInternalOffset := physicalOffset % uint64(fs.container.GetBlockSize())
+			// Check for sparse extent (PhysicalBlock == 0 means this is a "hole" in the file)
+			if extent.PhysicalBlock == 0 {
+				// Sparse extent - return zeros without reading from disk
+				zeroData := make([]byte, bytesToRead)
+				data = append(data, zeroData...)
+			} else {
+				// Read from the physical location
+				physicalOffset := extent.PhysicalBlock*uint64(fs.container.GetBlockSize()) + readStartInExtent
+				blockOffset := physicalOffset / uint64(fs.container.GetBlockSize())
+				blockInternalOffset := physicalOffset % uint64(fs.container.GetBlockSize())
 
-			// Read blocks
-			var extentData []byte
-			remainingBytes := bytesToRead
-			currentBlock := blockOffset
-			blockInternalPos := blockInternalOffset
+				// Read blocks
+				var extentData []byte
+				remainingBytes := bytesToRead
+				currentBlock := blockOffset
+				blockInternalPos := blockInternalOffset
 
-			for remainingBytes > 0 {
-				blockData, err := fs.container.ReadBlock(currentBlock)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read block %d: %w", currentBlock, err)
+				for remainingBytes > 0 {
+					blockData, err := fs.container.ReadBlock(currentBlock)
+					if err != nil {
+						return nil, fmt.Errorf("failed to read block %d: %w", currentBlock, err)
+					}
+
+					// Calculate how many bytes to read from this block
+					bytesInBlock := uint64(len(blockData)) - blockInternalPos
+					if bytesInBlock > remainingBytes {
+						bytesInBlock = remainingBytes
+					}
+
+					if bytesInBlock > 0 {
+						extentData = append(extentData, blockData[blockInternalPos:blockInternalPos+bytesInBlock]...)
+						remainingBytes -= bytesInBlock
+					}
+
+					// Move to next block
+					currentBlock++
+					blockInternalPos = 0
 				}
 
-				// Calculate how many bytes to read from this block
-				bytesInBlock := uint64(len(blockData)) - blockInternalPos
-				if bytesInBlock > remainingBytes {
-					bytesInBlock = remainingBytes
-				}
-
-				if bytesInBlock > 0 {
-					extentData = append(extentData, blockData[blockInternalPos:blockInternalPos+bytesInBlock]...)
-					remainingBytes -= bytesInBlock
-				}
-
-				// Move to next block
-				currentBlock++
-				blockInternalPos = 0
+				data = append(data, extentData...)
 			}
-
-			data = append(data, extentData...)
 		}
 
 		currentLogicalOffset = extentLogicalEnd

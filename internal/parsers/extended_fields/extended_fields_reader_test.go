@@ -80,7 +80,12 @@ func TestExtendedFieldsReader(t *testing.T) {
 		field2 := []byte{0x11, 0x22, 0x33}
 		h1 := encodeFieldHeader(5, types.XfSystemField, uint16(len(field1)))
 		h2 := encodeFieldHeader(6, types.XfUserField, uint16(len(field2)))
+
+		// Build data with proper 8-byte alignment between fields
 		data := append(h1, field1...)
+		// Field 1 size: 4 (header) + 2 (data) = 6 bytes
+		// Align to 8 bytes by adding 2 padding bytes
+		data = append(data, 0x00, 0x00)
 		data = append(data, h2...)
 		data = append(data, field2...)
 

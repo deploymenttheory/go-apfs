@@ -54,6 +54,10 @@ func (r *ExtendedFieldsReader) ListExtendedFields() ([]interfaces.ExtendedField,
 		data := r.blob.XfData[offset : offset+int(hdr.XSize)]
 		offset += int(hdr.XSize)
 
+		// Extended fields must be 8-byte aligned per APFS specification
+		// Round up to next 8-byte boundary
+		offset = (offset + 7) & ^7
+
 		fields = append(fields, &ExtendedField{header: hdr, data: data})
 	}
 
