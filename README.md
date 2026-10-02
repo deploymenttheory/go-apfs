@@ -1,5 +1,18 @@
 # afps
 
+> [!WARNING]
+> **This project is sunsetted and no longer maintained.** It has been superseded by
+> **[go-apfs-v2](https://github.com/deploymenttheory/go-apfs-v2)**, a full rewrite that reads
+> APFS and HFS+ from `.dmg` files, raw images and containers, and can also build and repack
+> disk images. This repository will be archived and will receive no further updates, fixes or
+> security patches.
+>
+> Please migrate to v2:
+>
+> ```sh
+> go get github.com/deploymenttheory/go-apfs-v2
+> ```
+
 **afps** is a cross-platform, read-only command-line tool for exploring, extracting, recovering, and validating Apple File System (APFS) volumes — directly from raw disks, partitions, or `.dmg` images, without mounting or relying on macOS.
 
 ---
